@@ -2,74 +2,77 @@
 #include <string>
 #include <vector>
 
-using namespace std;
+#include "Repository.h"
 
 
 int main(int argc, char* argv[]) 
 {
     if (argc < 2) 
     {
-        cout << "Usage: mygit <command> [options]\n";
+        std::cout << "Usage: mygit <command> [options]\n";
         return 1;
     }
 
-    string command = argv[1];
+    std::string command = argv[1];
+    Repository repository;
 
-    // Handle "init"
     if (command == "init") 
     {
-        cout << "Initializing repository...\n";
-        // TODO: create .mygit folder, etc.
+        std::cout << "Initializing MiniGit repository...\n";
+        repository.init();
     }
 
-    // Handle "add"
     else if (command == "add") 
     {
         if (argc < 3) 
         {
-            cout << "Usage: mygit add <file>\n";
+            std::cout << "Usage: mygit add <file1> <file2> <file3> ... \n";
             return 1;
         }
-        string filename = argv[2];
-        cout << "Adding file: " << filename << "\n";
-        // TODO: stage file changes
+
+        std::vector<std::string> filenames;
+
+        for(int i = 2; i < argc; i++)
+        {
+             filenames.push_back(argv[i]);
+        }
+        repository.add(filenames);
     }
 
-    // Handle "commit"
     else if (command == "commit") 
     {
-        string message;
+        std::string message;
         for (int i = 2; i < argc; i++) 
         {
-            if ((string(argv[i]) == "-m") && (i + 1 < argc)) 
+            if ((std::string(argv[i]) == "-m") && (i + 1 < argc)) 
             {
                 message = argv[i + 1];
                 i++;
             }
         }
 
-        if (message.empty()) {
-            cout << "Usage: mygit commit -m \"message\"\n";
+        if (message.empty()) 
+        {
+            std::cout << "Usage: mygit commit -m \"message\"\n";
             return 1;
         }
 
-        cout << "Committing changes: \"" << message << "\"\n";
+        std::cout << "Committing changes: \"" << message << "\"\n";
         // TODO: write commit object
     }
 
-    // Handle "status"
     else if (command == "status") 
     {
-        cout << "On branch main\n";
-        cout << "Changes to be committed:\n";
-        cout << "  modified: example.cpp\n";
+        std::cout << "On branch main\n";
+        std::cout << "Changes to be committed:\n";
+        std::cout << "  modified: example.cpp\n";
         // TODO: check file states
     }
 
     // Unknown command
     else {
-        cout << "Unknown command: " << command << "\n";
-        cout << "Available commands: init, add, commit, status\n";
+        std::cout << "Unknown command: " << command << "\n";
+        std::cout << "Available commands: init, add, commit, status\n";
         return 1;
     }
 
