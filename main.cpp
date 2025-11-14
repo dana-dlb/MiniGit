@@ -66,7 +66,7 @@ int main(int argc, char* argv[])
         std::cout << "On branch main\n";
         std::cout << "Changes to be committed:\n";
         std::cout << "  modified: example.cpp\n";
-        // TODO: check file states
+        repository.status();
     }
 
     // Unknown command

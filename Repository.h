@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-
+#include <unordered_map>
 #include "Commit.h"
 
 class Repository
@@ -22,7 +22,11 @@ class Repository
     private:
 
         bool initialized() const;
-
+        void load_working_directory_files(std::vector<std::string>& working_directory_files) const;
+        bool load_head(CommitInfo& head) const;
+        void write_head(const CommitInfo& head) const;
+        bool load_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const;
+        void write_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const;
 
         Commit* head;
         std::unordered_map<std::string, Commit*> branches;

@@ -4,24 +4,20 @@
 #include <string>
 #include <unordered_map>
 
+
+typedef struct CommitInfo
+{
+    std::string id;
+    std::string author; 
+    std::string message;
+    std::string timestamp;
+    std::string parent_1_id; // current branch
+    std::string parent_2_id; // merged branch
+    std::unordered_map<std::string, std::string> file_hashes; // filename -> blob hash
+} CommitInfo;
+
 class Commit
 {
-    public:
-        Commit(std::string author, 
-            std::string message, 
-            Commit* parent_1, 
-            Commit* parent_2, 
-            std::unordered_map<std::string, std::string> file_hashes);
-
-
-    private:
-        std::string id;
-        std::string author; 
-        std::string message;
-        std::string timestamp;
-        Commit* parent_1; // current branch
-        Commit* parent_2; // merged branch
-        std::unordered_map<std::string, std::string> file_hashes; // filename -> blob hash
 };
 
 
