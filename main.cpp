@@ -58,19 +58,16 @@ int main(int argc, char* argv[])
         }
 
         std::cout << "Committing changes: \"" << message << "\"\n";
-        // TODO: write commit object
+        repository.commit(message);
     }
 
     else if (command == "status") 
     {
-        std::cout << "On branch main\n";
-        std::cout << "Changes to be committed:\n";
-        std::cout << "  modified: example.cpp\n";
         repository.status();
     }
 
-    // Unknown command
-    else {
+    else 
+    {
         std::cout << "Unknown command: " << command << "\n";
         std::cout << "Available commands: init, add, commit, status\n";
         return 1;

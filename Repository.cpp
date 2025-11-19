@@ -1,8 +1,16 @@
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <unordered_map>
+
+
+
 #include <nlohmann/json.hpp>
+#include <openssl/sha.h>
+
 #include "MiniGit.h"
 #include "Repository.h"
 
@@ -14,29 +22,51 @@ void Repository::init()
     {
         try 
         {
-            if (std::filesystem::create_directory(MINIGIT_FILES_PATH)) 
+            std::vector<std::string> directories { MINIGIT_FILES_PATH, 
+                                                    MINIGIT_REFS_PATH,
+                                                    MINIGIT_BRANCHES_PATH,
+                                                    MINIGIT_OBJECTS_PATH,
+                                                    MINIGIT_COMMITS_PATH,
+                                                    MINIGIT_BLOBS_PATH,
+                                                    MINIGIT_TREES_PATH,
+                                                    MINIGIT_LOGS_PATH,
+                                                    MINIGIT_LOG_REFS_PATH,
+                                                    MINIGIT_BRANCHES_LOG_PATH    
+                                                };
+
+            for(auto dir_name : directories)
             {
-                std::cout << "Initialized empty MiniGit repository in: " << MINIGIT_FILES_PATH << std::endl;
-            } 
-            else 
-            {
-                std::cout << "Error: Directory " << MINIGIT_FILES_PATH << " already exists or failed to create.\n";
+                if (std::filesystem::create_directory(dir_name)) 
+                {
+                    std::cout << "Initialized MiniGit repository in: " << dir_name << std::endl;
+                } 
+                else 
+                {
+                    std::cout << "Error: Directory " << dir_name << " already exists or failed to create.\n";
+                }
             }
         } 
         catch (const std::filesystem::filesystem_error& e) 
         {
             std::cerr << "Error: " << e.what() << '\n';
         }
+
+        // We are now on branch master, so write this information into HEAD
+        std::ofstream head(MINIGIT_HEAD_PATH);
+        head << MINIGIT_MASTER_BRANCH_NAME;
+        head.close();
+
     }
     else
     {
         std::cout << "Repository already initialized." << std::endl;
     }
-
 }
 
 void Repository::add(const std::vector<std::string>& filenames)
 {
+    // TODO save blob for files that are staged
+
     bool is_initialized = initialized();
 
     if(!is_initialized)
@@ -45,11 +75,66 @@ void Repository::add(const std::vector<std::string>& filenames)
     }
     else
     {
+        // First load the existing index, then update any entries if applicable
+
+        std::unordered_map<std::string, std::string> tracked_files;
+        load_tracked_files(tracked_files);
+
         for(auto filename : filenames)
         {
-            std::cout << "Added " << filename << std::endl;
-            //TODO: Add to staging area
+            if (std::filesystem::exists(filename))
+            {
+                tracked_files[filename] = get_file_hash(filename);
+                std::cout << "Added " << filename << std::endl;                
+            }
+            else
+            {
+                std::cout << "ERROR: file " << filename << " did not match any files." << std::endl;
+            }
+            
         }
+
+        write_tracked_files(tracked_files);
+    }
+}
+
+
+void Repository::commit(const std::string& message)
+{
+
+    bool is_initialized = initialized();
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    {
+        // Assemble commit info 
+        CommitInfo commit;
+        load_tracked_files(commit.file_hashes);        
+        // TODO: Read author name from config file
+        commit.author = "Author";
+        auto now = std::chrono::system_clock::now();
+        commit.timestamp = timepointToString(now);
+        commit.message = message;        
+        commit.id = sha1(commit.author + commit.timestamp + commit.message);
+
+        std::cout << "Files to be commited: " << std::endl;
+        for(auto const& pair : commit.file_hashes)
+        {
+            std::cout << "\t" << pair.first << std::endl;
+        }
+
+        // Write commit ID in corresponding branch file
+        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+        branch_file << commit.id;
+        branch_file.close();
+
+        // Write JSON file containing commit info 
+        write_commit_info(commit);
+
+        // TODO: log commit
+
     }
 }
 
@@ -63,6 +148,8 @@ void Repository::status()
     }
     else
     {
+        std::cout<< "On branch " << get_current_branch() << std::endl;
+
         std::vector<std::string> working_directory_files;
         load_working_directory_files(working_directory_files);
 
@@ -71,13 +158,86 @@ void Repository::status()
 
         if(!index_exists)
         {
-            std::cout<<"Untracked files:"<<std::endl;
+            std::cout << "Untracked files:" << std::endl;
             for(auto file : working_directory_files)
             {
                 std::cout << "\t" << file << std::endl;
             }
         }
+        else
+        {
+            
+            std::vector<std::string> staged;
+            std::vector<std::string> modified;
+            std::vector<std::string> untracked;
+            CommitInfo head;
+            std::string head_id;
+            bool head_exists = load_head_id(head_id);
+            if(head_exists)
+            {
+                load_commit_info(head_id, head);
+            }
 
+            for(auto file : working_directory_files)
+            {
+                // A file that is in the working directory but not in the index is untracked.
+                // A file that is in the index but has a different hash than current hash is modified.
+                // A file that is in the index but not in the HEAD 
+                //  (or has a different hash in the index than in the HEAD, or if HEAD has not been commited yet) is staged.
+
+                if(auto search = tracked_files.find(file); search != tracked_files.end())
+                {
+                    std::string current_hash = get_file_hash(file);
+                    if(search->second != current_hash)
+                    {
+                        modified.push_back(file);
+                    }
+
+                    if(auto search_head = head.file_hashes.find(file); search_head != head.file_hashes.end())
+                    {
+                        if(search_head->second != search->second)
+                        {
+                            staged.push_back(file);
+                        }
+                    }
+                    else // File not found in HEAD
+                    {
+                        staged.push_back(file);
+                    }
+                }
+                else // File not found in index
+                {
+                    untracked.push_back(file);
+                }
+            }
+
+            if(staged.size())
+            {
+                std::cout << "Changes to be commited:" << std::endl;
+                for(auto file : staged)
+                {
+                    std::cout << "\t" << file << std::endl;
+                }
+            }
+
+            if(modified.size())
+            {
+                std::cout << "Changes not staged for commit:" << std::endl;
+                for(auto file : modified)
+                {
+                    std::cout << "\t" << file << std::endl;
+                }
+            }
+
+            if(untracked.size())
+            {
+                std::cout << "Untracked files:" << std::endl;
+                for(auto file : untracked)
+                {
+                    std::cout << "\t" << file << std::endl;
+                }
+            }
+        }
     }    
 }
 
@@ -99,15 +259,42 @@ void Repository::load_working_directory_files(std::vector<std::string>& working_
     }
 }
 
-bool Repository::load_head(CommitInfo& head) const
+bool Repository::load_head_id(std::string& head_id) const
 {
+    bool head_exists = std::filesystem::exists(MINIGIT_BRANCHES_PATH + get_current_branch());
 
-    return false;
+    if(head_exists)
+    {
+        std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+        std::stringstream buffer;
+        buffer << head.rdbuf();
+        head_id = buffer.str();
+        head.close();
+    }
+    return head_exists;      
 }
 
-void Repository::write_head(const CommitInfo& head) const
+bool Repository::load_commit_info(std::string id, CommitInfo& head) const
 {
+    nlohmann::json json_data;
+    bool head_exists = std::filesystem::exists(MINIGIT_COMMITS_PATH + id);
+    
+    if(head_exists)
+    {
+        std::ifstream file(MINIGIT_COMMITS_PATH + id);
+        file >> json_data;
+        head = json_data.get<CommitInfo>();
+    }
+    
+    return head_exists;
+}
 
+
+void Repository::write_commit_info(const CommitInfo& head) const
+{
+    nlohmann::json json_data;
+    json_data = head;
+    std::ofstream(MINIGIT_COMMITS_PATH + head.id) << json_data.dump(4);
 }
 
 bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const
@@ -119,10 +306,6 @@ bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>
         nlohmann::json json_data;
         file >> json_data;
         tracked_files = json_data["tracked_files"].get<std::unordered_map<std::string, std::string>>();
-
-        std::cout << "Tracked files loaded:\n";
-        for (auto const& p : tracked_files)
-            std::cout << p.first << " " << p.second;
     }
     return index_exists;
 }
@@ -134,5 +317,45 @@ void Repository::write_tracked_files(std::unordered_map<std::string, std::string
     std::ofstream file(MINIGIT_INDEX_PATH);
     file << json_data.dump(4); 
     file.close();
-
 }
+
+std::string Repository::sha1(const std::string &input) const 
+{
+    unsigned char hash[MINIGIT_SHA_DIGEST_LENGTH]; 
+
+    SHA1(reinterpret_cast<const unsigned char*>(input.c_str()),
+         input.size(),
+         hash);
+
+    // Convert the resulting bytes to hex
+    std::ostringstream result;
+    result << std::hex << std::setfill('0');
+
+    for (int i = 0; i < MINIGIT_SHA_DIGEST_LENGTH; i++) {
+        result << std::setw(2) << static_cast<int>(hash[i]);
+    }
+
+    return result.str();
+}
+
+std::string Repository::get_current_branch() const 
+{
+    // Get current branch name from the HEAD file
+    std::ifstream head(MINIGIT_HEAD_PATH);  
+    std::stringstream buffer;
+    buffer << head.rdbuf();
+    std::string branch = buffer.str();
+    head.close();
+    return branch;
+}
+
+std::string Repository::get_file_hash(std::string filename) const
+{
+    std::filesystem::path file {filename};
+    std::filesystem::file_time_type timestamp = std::filesystem::last_write_time(file);
+    auto size = std::filesystem::file_size(file);
+
+    std::string hash = sha1(std::to_string(timestamp.time_since_epoch().count()) + std::to_string(size));
+    return hash;
+}
+
