@@ -8,10 +8,6 @@
 #include <string>
 #include <unordered_map>
 
-
-
-
-
 typedef struct CommitInfo
 {
     std::string id;
@@ -22,6 +18,7 @@ typedef struct CommitInfo
     std::string parent_2_id; // merged branch
     std::unordered_map<std::string, std::string> file_hashes; // filename -> blob hash
 } CommitInfo;
+
 
 void to_json(nlohmann::json& json_data, const CommitInfo& commit);
 void from_json(const nlohmann::json& json_data, CommitInfo& commit);

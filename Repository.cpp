@@ -6,11 +6,10 @@
 #include <sstream>
 #include <unordered_map>
 
-
-
 #include <nlohmann/json.hpp>
 #include <openssl/sha.h>
 
+#include "Log.h"
 #include "MiniGit.h"
 #include "Repository.h"
 
@@ -65,7 +64,7 @@ void Repository::init()
 
 void Repository::add(const std::vector<std::string>& filenames)
 {
-    // TODO save blob for files that are staged
+    
 
     bool is_initialized = initialized();
 
@@ -84,8 +83,21 @@ void Repository::add(const std::vector<std::string>& filenames)
         {
             if (std::filesystem::exists(filename))
             {
-                tracked_files[filename] = get_file_hash(filename);
-                std::cout << "Added " << filename << std::endl;                
+                // First try to see if this file is already in the index, if so check if hash has changed
+                auto search = tracked_files.find(filename);
+                
+                // If the file is not in the index or is in the index but the hash has changed 
+                // add the file to the index and copy the file
+                std::string current_hash = get_file_hash(filename);
+                if((search == tracked_files.end()) || 
+                        ((search != tracked_files.end()) && (search->second != current_hash)))
+                {
+                    tracked_files[filename] = current_hash;
+                    // Save blob for files that are staged, since this is the version that should be commited even
+                    // the file is modified before the next commit.
+                    std::filesystem::copy_file(filename, MINIGIT_BLOBS_PATH + current_hash);  
+                    std::cout << "Added " << filename << std::endl;                
+                }             
             }
             else
             {
@@ -101,6 +113,7 @@ void Repository::add(const std::vector<std::string>& filenames)
 
 void Repository::commit(const std::string& message)
 {
+    // TODO: Read author name from config file
 
     bool is_initialized = initialized();
     if(!is_initialized)
@@ -109,20 +122,44 @@ void Repository::commit(const std::string& message)
     }
     else
     {
-        // Assemble commit info 
+        // Assemble commit info and log entry
         CommitInfo commit;
-        load_tracked_files(commit.file_hashes);        
-        // TODO: Read author name from config file
+        LogEntry log_entry;
+        
+        load_tracked_files(commit.file_hashes);               
         commit.author = "Author";
+        log_entry.author = commit.author;
         auto now = std::chrono::system_clock::now();
         commit.timestamp = timepointToString(now);
-        commit.message = message;        
+        log_entry.timestamp = commit.timestamp;
+        commit.message = message;    
+        log_entry.message = commit.message;    
         commit.id = sha1(commit.author + commit.timestamp + commit.message);
+        log_entry.new_commit_id = commit.id;
+        // Retrieve parent commit info
+        std::string parent_commit_id;
+        CommitInfo parent_commit_info;
+        bool head_exists = load_head_id(parent_commit_id);
+        if(head_exists)
+        {
+            commit.parent_1_id = parent_commit_id;
+            log_entry.old_commit_id = parent_commit_id;
+            load_commit_info(parent_commit_id, parent_commit_info);
+        } 
 
         std::cout << "Files to be commited: " << std::endl;
+        // List only the files that are in the index but are not in the previous commit or the hash has changed.
+        // Under the hood all staged files hashes are saved in the commit info JSON file. 
+      
         for(auto const& pair : commit.file_hashes)
         {
-            std::cout << "\t" << pair.first << std::endl;
+            auto search = parent_commit_info.file_hashes.find(pair.first);
+            if(search == parent_commit_info.file_hashes.end() ||
+                    (search != parent_commit_info.file_hashes.end() && 
+                        search->second != pair.second))
+            {
+                std::cout << "\t" << pair.first << std::endl;
+            }  
         }
 
         // Write commit ID in corresponding branch file
@@ -133,7 +170,9 @@ void Repository::commit(const std::string& message)
         // Write JSON file containing commit info 
         write_commit_info(commit);
 
-        // TODO: log commit
+        // TODO: log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+
+        write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
 
     }
 }
@@ -288,7 +327,6 @@ bool Repository::load_commit_info(std::string id, CommitInfo& head) const
     
     return head_exists;
 }
-
 
 void Repository::write_commit_info(const CommitInfo& head) const
 {

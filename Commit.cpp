@@ -21,11 +21,11 @@ void from_json(const nlohmann::json& json_data, CommitInfo& commit)
 {
     json_data.at("id").get_to(commit.id);
     json_data.at("author").get_to(commit.author);
-    json_data.at("message").get_to(commit.message);  // works for unordered_map<string,string>
+    json_data.at("message").get_to(commit.message); 
     json_data.at("timestamp").get_to(commit.timestamp);
     json_data.at("parent_1_id").get_to(commit.parent_1_id);
     json_data.at("parent_2_id").get_to(commit.parent_2_id);
-    json_data.at("file_hashes").get_to(commit.file_hashes);
+    json_data.at("file_hashes").get_to(commit.file_hashes);  // works for unordered_map<string,string>
 }
 
 std::string timepointToString(const std::chrono::system_clock::time_point& tp) {
