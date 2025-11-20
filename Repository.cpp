@@ -95,6 +95,7 @@ void Repository::add(const std::vector<std::string>& filenames)
                     tracked_files[filename] = current_hash;
                     // Save blob for files that are staged, since this is the version that should be commited even
                     // the file is modified before the next commit.
+
                     std::filesystem::copy_file(filename, MINIGIT_BLOBS_PATH + current_hash);  
                     std::cout << "Added " << filename << std::endl;                
                 }             
@@ -137,15 +138,11 @@ void Repository::commit(const std::string& message)
         commit.id = sha1(commit.author + commit.timestamp + commit.message);
         log_entry.new_commit_id = commit.id;
         // Retrieve parent commit info
-        std::string parent_commit_id;
         CommitInfo parent_commit_info;
-        bool head_exists = load_head_id(parent_commit_id);
-        if(head_exists)
-        {
-            commit.parent_1_id = parent_commit_id;
-            log_entry.old_commit_id = parent_commit_id;
-            load_commit_info(parent_commit_id, parent_commit_info);
-        } 
+        get_previous_commit_info(parent_commit_info);
+        commit.parent_1_id = parent_commit_info.id;
+        log_entry.old_commit_id = parent_commit_info.id;
+
 
         std::cout << "Files to be commited: " << std::endl;
         // List only the files that are in the index but are not in the previous commit or the hash has changed.
@@ -170,10 +167,98 @@ void Repository::commit(const std::string& message)
         // Write JSON file containing commit info 
         write_commit_info(commit);
 
-        // TODO: log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-
+        // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
         write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+    }
+}
 
+void Repository::revert(const std::string& commit_id)
+{
+    bool is_initialized = initialized();
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    {
+        // Assemble commit info and log entry
+        CommitInfo commit;
+        LogEntry log_entry;
+                    
+        commit.author = "Author";
+        log_entry.author = commit.author;
+        auto now = std::chrono::system_clock::now();
+        commit.timestamp = timepointToString(now);
+        log_entry.timestamp = commit.timestamp;
+        commit.message = "Reverting to " + commit_id;    
+        log_entry.message = commit.message;    
+        commit.id = sha1(commit.author + commit.timestamp + commit.message);
+        log_entry.new_commit_id = commit.id;
+        // Retrieve parent commit info
+        CommitInfo parent_commit_info;
+        get_previous_commit_info(parent_commit_info);
+        commit.parent_1_id = parent_commit_info.id;
+        log_entry.old_commit_id = parent_commit_info.id;
+
+        // First retrieve old commit info 
+        CommitInfo old_commit_info;
+        load_commit_info(commit_id, old_commit_info);
+
+        // Retrieve file hashes from the old commit
+        for(auto const& pair : old_commit_info.file_hashes)
+        {
+            commit.file_hashes[pair.first] = pair.second;
+            
+            // If the current hash is different from the old hash, 
+            // move blobs associated with old commit id back to working directory
+
+            std::string current_hash = get_file_hash(pair.first);
+
+            if(current_hash != pair.second)
+            {
+                // remove file from working directory first
+                std::filesystem::remove(pair.first);
+                // now replace it with old version
+                std::filesystem::copy_file(
+                    MINIGIT_BLOBS_PATH + pair.second, 
+                    pair.first, 
+                    std::filesystem::copy_options::overwrite_existing);
+            }        
+        }
+
+        // Write commit ID in corresponding branch file
+        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+        branch_file << commit.id;
+        branch_file.close();
+
+        // Write JSON file containing commit info 
+        write_commit_info(commit);
+
+        // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+        write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+    }   
+}
+
+void Repository::print_log() const
+{
+    std::vector<LogEntry> entries;
+    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
+
+    // Print in reverse order (newest entry first)
+    while(entries.size())
+    {
+        auto const& entry = entries.back();
+        std::cout <<"commit " << entry.new_commit_id << std::endl;
+        std::cout <<"Author: " << entry.author << std::endl;
+        std::cout <<"Date: " << entry.timestamp << std::endl;
+        std::cout << std::endl;
+        std::cout << entry.message;
+        std::cout << std::endl << std::endl;
+
+        //Remove the last element
+        entries.pop_back();
     }
 }
 
@@ -210,12 +295,7 @@ void Repository::status()
             std::vector<std::string> modified;
             std::vector<std::string> untracked;
             CommitInfo head;
-            std::string head_id;
-            bool head_exists = load_head_id(head_id);
-            if(head_exists)
-            {
-                load_commit_info(head_id, head);
-            }
+            get_previous_commit_info(head);
 
             for(auto file : working_directory_files)
             {
@@ -298,21 +378,6 @@ void Repository::load_working_directory_files(std::vector<std::string>& working_
     }
 }
 
-bool Repository::load_head_id(std::string& head_id) const
-{
-    bool head_exists = std::filesystem::exists(MINIGIT_BRANCHES_PATH + get_current_branch());
-
-    if(head_exists)
-    {
-        std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
-        std::stringstream buffer;
-        buffer << head.rdbuf();
-        head_id = buffer.str();
-        head.close();
-    }
-    return head_exists;      
-}
-
 bool Repository::load_commit_info(std::string id, CommitInfo& head) const
 {
     nlohmann::json json_data;
@@ -393,7 +458,20 @@ std::string Repository::get_file_hash(std::string filename) const
     std::filesystem::file_time_type timestamp = std::filesystem::last_write_time(file);
     auto size = std::filesystem::file_size(file);
 
-    std::string hash = sha1(std::to_string(timestamp.time_since_epoch().count()) + std::to_string(size));
+    std::string hash = sha1(filename + std::to_string(timestamp.time_since_epoch().count()) + std::to_string(size));
     return hash;
 }
 
+void Repository::get_previous_commit_info(CommitInfo& commit_info) const
+{
+    // Instead of using the HEAD info to get the current branch, read
+    // last commit id from the log, since the branch could have changed 
+    // in the meantime.
+
+    std::vector<LogEntry> entries;
+    read_log(MINIGIT_HEAD_LOG_PATH, entries);
+    if(entries.size() > 0)
+    {
+        load_commit_info(entries.back().new_commit_id, commit_info);
+    }
+}

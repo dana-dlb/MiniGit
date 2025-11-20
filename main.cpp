@@ -66,6 +66,27 @@ int main(int argc, char* argv[])
         repository.status();
     }
 
+    else if (command == "log")
+    {
+        repository.print_log();
+    }
+
+    else if (command == "revert")
+    {
+        if (argc != 3) 
+        {
+            std::cout << "Usage: mygit revert <commit_id>";
+            return 1;
+        }
+        else
+        {
+            std::string commit_id = argv[2];
+            repository.revert(commit_id);
+        } 
+
+
+    }
+
     else 
     {
         std::cout << "Unknown command: " << command << "\n";

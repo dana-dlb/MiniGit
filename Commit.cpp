@@ -30,8 +30,8 @@ void from_json(const nlohmann::json& json_data, CommitInfo& commit)
 
 std::string timepointToString(const std::chrono::system_clock::time_point& tp) {
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm = *std::gmtime(&t); // or std::localtime
-
+    std::tm tm = *std::gmtime(&t); 
+    
     std::ostringstream oss;
     oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     return oss.str();
