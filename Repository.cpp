@@ -14,6 +14,7 @@
 #include "Repository.h"
 
 void Repository::init()
+// Initializes the .minigit repository and subdirectories
 {
     bool repo_initialized = initialized();
 
@@ -63,9 +64,9 @@ void Repository::init()
 }
 
 void Repository::add(const std::vector<std::string>& filenames)
+// Adds filenames to the staging area. 
+// The repository must be initialized.
 {
-    
-
     bool is_initialized = initialized();
 
     if(!is_initialized)
@@ -111,11 +112,10 @@ void Repository::add(const std::vector<std::string>& filenames)
     }
 }
 
-
 void Repository::commit(const std::string& message)
+// Save a snapshot of the files in the staging area. The commit data is saved in the log.
+// Repository must be initialized.
 {
-    // TODO: Read author name from config file
-
     bool is_initialized = initialized();
     if(!is_initialized)
     {
@@ -127,7 +127,8 @@ void Repository::commit(const std::string& message)
         CommitInfo commit;
         LogEntry log_entry;
         
-        load_tracked_files(commit.file_hashes);               
+        load_tracked_files(commit.file_hashes);
+        // TODO: Read author name from config file               
         commit.author = "Author";
         log_entry.author = commit.author;
         auto now = std::chrono::system_clock::now();
@@ -143,11 +144,9 @@ void Repository::commit(const std::string& message)
         commit.parent_1_id = parent_commit_info.id;
         log_entry.old_commit_id = parent_commit_info.id;
 
-
         std::cout << "Files to be commited: " << std::endl;
         // List only the files that are in the index but are not in the previous commit or the hash has changed.
         // Under the hood all staged files hashes are saved in the commit info JSON file. 
-      
         for(auto const& pair : commit.file_hashes)
         {
             auto search = parent_commit_info.file_hashes.find(pair.first);
@@ -174,6 +173,10 @@ void Repository::commit(const std::string& message)
 }
 
 void Repository::revert(const std::string& commit_id)
+// Revert to an old commit id. Files in the working directory are replaced with the versions
+// associated with the commit id. The history is kept intact and a new commit is generated
+// and logged for this change.
+// Repository must be initialized.
 {
     bool is_initialized = initialized();
     if(!is_initialized)
@@ -242,27 +245,39 @@ void Repository::revert(const std::string& commit_id)
 }
 
 void Repository::print_log() const
+// Print log information (list of commits) in reverse chronological order. 
+// Repository must be initialized.
 {
-    std::vector<LogEntry> entries;
-    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
-
-    // Print in reverse order (newest entry first)
-    while(entries.size())
+    bool is_initialized = initialized();
+    if(!is_initialized)
     {
-        auto const& entry = entries.back();
-        std::cout <<"commit " << entry.new_commit_id << std::endl;
-        std::cout <<"Author: " << entry.author << std::endl;
-        std::cout <<"Date: " << entry.timestamp << std::endl;
-        std::cout << std::endl;
-        std::cout << entry.message;
-        std::cout << std::endl << std::endl;
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    {    
+        std::vector<LogEntry> entries;
+        read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
 
-        //Remove the last element
-        entries.pop_back();
+        // Print in reverse order (newest entry first)
+        while(entries.size())
+        {
+            auto const& entry = entries.back();
+            std::cout <<"commit " << entry.new_commit_id << std::endl;
+            std::cout <<"Author: " << entry.author << std::endl;
+            std::cout <<"Date: " << entry.timestamp << std::endl;
+            std::cout << std::endl;
+            std::cout << entry.message;
+            std::cout << std::endl << std::endl;
+
+            //Remove the last element
+            entries.pop_back();
+        }
     }
 }
 
 void Repository::status()
+// Prints branch name and the list of staged, modified and untracked files.
+// Repository must be initialized.
 {
     bool is_initialized = initialized();
 
@@ -289,8 +304,7 @@ void Repository::status()
             }
         }
         else
-        {
-            
+        {           
             std::vector<std::string> staged;
             std::vector<std::string> modified;
             std::vector<std::string> untracked;
@@ -361,6 +375,7 @@ void Repository::status()
 }
 
 bool Repository::initialized() const
+// Returns true if the repository has been initialized, false otherwise.
 {
     const std::filesystem::path files_path {MINIGIT_FILES_PATH};
 
@@ -368,6 +383,7 @@ bool Repository::initialized() const
 }
 
 void Repository::load_working_directory_files(std::vector<std::string>& working_directory_files) const
+// Load working directory files into working_directory_files.
 {
     for(auto const& dir_entry : std::filesystem::directory_iterator {".\\"})
     {
@@ -378,29 +394,32 @@ void Repository::load_working_directory_files(std::vector<std::string>& working_
     }
 }
 
-bool Repository::load_commit_info(std::string id, CommitInfo& head) const
+bool Repository::load_commit_info(std::string id, CommitInfo& commit_info) const
+// Load commit information from file.
 {
     nlohmann::json json_data;
-    bool head_exists = std::filesystem::exists(MINIGIT_COMMITS_PATH + id);
+    bool file_exists = std::filesystem::exists(MINIGIT_COMMITS_PATH + id);
     
-    if(head_exists)
+    if(file_exists)
     {
         std::ifstream file(MINIGIT_COMMITS_PATH + id);
         file >> json_data;
-        head = json_data.get<CommitInfo>();
+        commit_info = json_data.get<CommitInfo>();
     }
     
-    return head_exists;
+    return file_exists;
 }
 
-void Repository::write_commit_info(const CommitInfo& head) const
+void Repository::write_commit_info(const CommitInfo& commit_info) const
+// Write commit info to file.
 {
     nlohmann::json json_data;
-    json_data = head;
-    std::ofstream(MINIGIT_COMMITS_PATH + head.id) << json_data.dump(4);
+    json_data = commit_info;
+    std::ofstream(MINIGIT_COMMITS_PATH + commit_info.id) << json_data.dump(4);
 }
 
 bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const
+// Load tracked files from index.
 { 
     bool index_exists = std::filesystem::exists(MINIGIT_INDEX_PATH);
     if(index_exists)
@@ -414,6 +433,7 @@ bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>
 }
 
 void Repository::write_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const
+// Write tracked files to index (JSON file).
 {
     nlohmann::json json_data;
     json_data["tracked_files"] = tracked_files;
@@ -423,6 +443,7 @@ void Repository::write_tracked_files(std::unordered_map<std::string, std::string
 }
 
 std::string Repository::sha1(const std::string &input) const 
+// Returns the SHA-1 hashed input string. 
 {
     unsigned char hash[MINIGIT_SHA_DIGEST_LENGTH]; 
 
@@ -442,6 +463,7 @@ std::string Repository::sha1(const std::string &input) const
 }
 
 std::string Repository::get_current_branch() const 
+// Returns the current branch name.
 {
     // Get current branch name from the HEAD file
     std::ifstream head(MINIGIT_HEAD_PATH);  
@@ -453,6 +475,7 @@ std::string Repository::get_current_branch() const
 }
 
 std::string Repository::get_file_hash(std::string filename) const
+// Returns the hash for a file using its name, last modified timestamp and size.
 {
     std::filesystem::path file {filename};
     std::filesystem::file_time_type timestamp = std::filesystem::last_write_time(file);
@@ -463,6 +486,7 @@ std::string Repository::get_file_hash(std::string filename) const
 }
 
 void Repository::get_previous_commit_info(CommitInfo& commit_info) const
+// Retrieves the last commit information from the log.
 {
     // Instead of using the HEAD info to get the current branch, read
     // last commit id from the log, since the branch could have changed 

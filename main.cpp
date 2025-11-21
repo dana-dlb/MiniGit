@@ -83,8 +83,6 @@ int main(int argc, char* argv[])
             std::string commit_id = argv[2];
             repository.revert(commit_id);
         } 
-
-
     }
 
     else 
