@@ -99,6 +99,24 @@ int main(int argc, char* argv[])
         }         
     }
 
+    else if (command == "branch")
+    {
+        if (argc > 3) 
+        {
+            std::cout << "Usage: minigit branch <branch name> OR minigit branch";
+            return 1;
+        }     
+        else if(argc == 3)
+        {
+            std::string branch = argv[2];
+            repository.create_branch(branch);
+        }   
+        else
+        {
+            repository.print_branches();
+        }
+    }
+
     else 
     {
         std::cout << "Unknown command: " << command << "\n";

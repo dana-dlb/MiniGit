@@ -18,6 +18,7 @@ class Repository
         void print_log() const;
         void checkout(const std::string& branch);
         void create_branch(const std::string& branch);
+        void print_branches();
         void merge(const std::string& branch);
 
     private:

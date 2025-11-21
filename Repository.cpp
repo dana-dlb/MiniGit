@@ -275,9 +275,72 @@ void Repository::print_log() const
     }
 }
 
+void Repository::create_branch(const std::string& branch)
+// Creates a new branch but does not switch to it.  
+{
+    // First check if repository is initialized
+    bool is_initialized = initialized();
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    { 
+        // Copy head commit id to the branch head file
+        std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+        std::stringstream buffer;
+        buffer << head.rdbuf();
+        std::string commit_id = buffer.str();
+        head.close();
+        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + branch);
+        branch_file << commit_id;
+        branch_file.close();        
+
+        // Copy last log entry for the current branch to the new branch log file
+        std::vector<LogEntry> entries;
+        read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);   
+
+        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + branch, entries.back());
+
+    }
+}
+
+
 void Repository::checkout(const std::string& branch)
 {
     //TODO:implement
+
+    // First check if repository is initialized 
+
+    // Check if the branch exists
+
+    // Block checkout if there are any staged or unstaged modified files 
+    
+    // Reset the index to the latest commit of the new branch
+
+    // Replace the working directory to the latest commit of the new branch
+
+}
+
+void Repository::print_branches()
+// Prints the list of existing branches
+{
+    bool is_initialized = initialized();
+
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    {
+      for(auto const& dir_entry : std::filesystem::directory_iterator {MINIGIT_BRANCHES_PATH})
+        {
+            if(dir_entry.is_regular_file())
+            {
+                std::cout << dir_entry.path().filename().string() << std::endl;
+            }     
+        } 
+    } 
 }
 
 void Repository::status()
