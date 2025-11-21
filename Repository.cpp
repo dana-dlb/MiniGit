@@ -275,6 +275,11 @@ void Repository::print_log() const
     }
 }
 
+void Repository::checkout(const std::string& branch)
+{
+    //TODO:implement
+}
+
 void Repository::status()
 // Prints branch name and the list of staged, modified and untracked files.
 // Repository must be initialized.

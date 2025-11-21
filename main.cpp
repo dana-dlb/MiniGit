@@ -9,7 +9,7 @@ int main(int argc, char* argv[])
 {
     if (argc < 2) 
     {
-        std::cout << "Usage: mygit <command> [options]\n";
+        std::cout << "Usage: minigit <command> [options]\n";
         return 1;
     }
 
@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
     {
         if (argc < 3) 
         {
-            std::cout << "Usage: mygit add <file1> <file2> <file3> ... \n";
+            std::cout << "Usage: minigit add <file1> <file2> <file3> ... \n";
             return 1;
         }
 
@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
 
         if (message.empty()) 
         {
-            std::cout << "Usage: mygit commit -m \"message\"\n";
+            std::cout << "Usage: minigit commit -m \"message\"\n";
             return 1;
         }
 
@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
     {
         if (argc != 3) 
         {
-            std::cout << "Usage: mygit revert <commit_id>";
+            std::cout << "Usage: minigit revert <commit_id>";
             return 1;
         }
         else
@@ -83,6 +83,20 @@ int main(int argc, char* argv[])
             std::string commit_id = argv[2];
             repository.revert(commit_id);
         } 
+    }
+
+    else if (command == "checkout")
+    {
+        if (argc != 3) 
+        {
+            std::cout << "Usage: minigit checkout <branch name>";
+            return 1;
+        }
+        else
+        {
+            std::string branch = argv[2];
+            repository.checkout(branch);
+        }         
     }
 
     else 

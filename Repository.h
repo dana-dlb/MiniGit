@@ -16,8 +16,8 @@ class Repository
         void commit(const std::string& message);
         void revert(const std::string& commit_id);
         void print_log() const;
-        void checkout(const std::string& commit_id);
-        void create_branch(const std::string& name);
+        void checkout(const std::string& branch);
+        void create_branch(const std::string& branch);
         void merge(const std::string& branch);
 
     private:
