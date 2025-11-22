@@ -452,6 +452,25 @@ class Branch(unittest.TestCase):
         self.assertEqual(head_log_data["log"][-1]["new_commit_id"], master_head_id)
         self.assertEqual(head_log_data["log"][-1]["message"], "Switched to branch master")
 
+        # Switch back to dev_branch_1
+        minigit_run("checkout", "dev_branch_1")
+        # HEAD should point to dev_branch_1 again
+        with open(".minigit/HEAD", "r") as file:
+            self.assertEqual(file.read(), "dev_branch_1")
+        # The index data should be restored to the dev_branch_1's
+        with open(".minigit/index.json", "r") as file:
+            index_data = json.load(file)
+        self.assertEqual(index_data, dev_branch_1_index_data)
+        # The working directory files should be restored to master's last commit
+        f1 = open("file1.txt", "r")
+        self.assertEqual(f1.read(), "Added some text")
+        f1.close()
+        # The change in HEAD should be logged
+        with open(".minigit/logs/HEAD", "r") as file:
+            head_log_data = json.load(file)
+        self.assertEqual(head_log_data["log"][-1]["old_commit_id"], master_head_id)
+        self.assertEqual(head_log_data["log"][-1]["new_commit_id"], dev_branch_1_head_id)
+        self.assertEqual(head_log_data["log"][-1]["message"], "Switched to branch dev_branch_1")
 
 
 if __name__ == '__main__':

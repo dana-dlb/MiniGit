@@ -264,7 +264,7 @@ void Repository::revert(const std::string& commit_id)
 }
 
 void Repository::print_log() const
-// Print log information (list of commits) in reverse chronological order. 
+// Print log information for the current branch (list of commits) in reverse chronological order. 
 // Repository must be initialized.
 {
     bool is_initialized = initialized();
