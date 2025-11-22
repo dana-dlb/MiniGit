@@ -36,7 +36,7 @@ class Repository
         void get_working_directory_files_statuses(std::vector<std::string>& staged, 
             std::vector<std::string>& modified, 
             std::vector<std::string>& untracked) const;
-        
+        bool is_revert_commit_id_valid(std::string commit_id) const;
 
 };
 
