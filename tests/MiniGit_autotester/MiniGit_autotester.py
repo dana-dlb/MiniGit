@@ -450,7 +450,7 @@ class Branch(unittest.TestCase):
             head_log_data = json.load(file)
         self.assertEqual(head_log_data["log"][-1]["old_commit_id"], dev_branch_1_head_id)
         self.assertEqual(head_log_data["log"][-1]["new_commit_id"], master_head_id)
-        self.assertEqual(head_log_data["log"][-1]["message"], "\"Created files\"")
+        self.assertEqual(head_log_data["log"][-1]["message"], "Switched to branch master")
 
 
 

@@ -335,10 +335,11 @@ void Repository::create_branch(const std::string& branch)
 }
 
 void Repository::checkout(const std::string& branch)
+// Checkout a branch (the index is reset to the last commit of the new branch, so is the working directory)
+// Preconditions: - repository is initialized
+//                - branch must exist
+//                - there are no staged or modified files
 {
-
-    //TODO: log switching HEAD if applicable
-    
     // First check if repository is initialized
     bool is_initialized = initialized();
     if(!is_initialized)
@@ -386,10 +387,17 @@ void Repository::checkout(const std::string& branch)
             }
             else // Preconditions are met, branch can be checked out
             {
+                // Retrieve old HEAD id 
+                std::ifstream branch_head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+                std::stringstream buffer;
+                buffer << branch_head.rdbuf();
+                std::string old_commit_id = buffer.str();
+                branch_head.close();
+
                 // Point HEAD to the new branch
                 std::ofstream head(MINIGIT_HEAD_PATH);
                 head << branch;
-                head.close();
+                head.close();            
 
                 // Reset the index to the latest commit of the new branch
                 CommitInfo commit_info;
@@ -412,6 +420,20 @@ void Repository::checkout(const std::string& branch)
                         pair.first, 
                         std::filesystem::copy_options::overwrite_existing);
                 }
+
+                // Now log this HEAD change in the HEAD log
+                LogEntry log_entry;
+                // TODO: Read author name from config file               
+                log_entry.author = "Author";
+                auto now = std::chrono::system_clock::now();
+                log_entry.timestamp = timepointToString(now);
+                log_entry.message = "Switched to branch " + branch;    
+                log_entry.new_commit_id = commit_info.id;
+                log_entry.old_commit_id = old_commit_id;
+
+                // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+                write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+
             }         
         }
     }
