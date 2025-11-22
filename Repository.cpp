@@ -97,7 +97,15 @@ void Repository::add(const std::vector<std::string>& filenames)
                     // Save blob for files that are staged, since this is the version that should be commited even
                     // the file is modified before the next commit.
 
-                    std::filesystem::copy_file(filename, MINIGIT_BLOBS_PATH + current_hash);  
+                    std::filesystem::copy_file(filename, 
+                        MINIGIT_BLOBS_PATH + current_hash, 
+                        std::filesystem::copy_options::none);
+
+                    // Make sure to copy timestamp as well, otherwise the hash will differ 
+                    auto timestamp = std::filesystem::last_write_time(filename);
+                    std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + current_hash,  timestamp);                    
+
+                    
                     std::cout << "Added " << filename << std::endl;                
                 }             
             }
@@ -105,7 +113,6 @@ void Repository::add(const std::vector<std::string>& filenames)
             {
                 std::cout << "ERROR: file " << filename << " did not match any files." << std::endl;
             }
-            
         }
 
         write_tracked_files(tracked_files);
@@ -191,10 +198,9 @@ void Repository::revert(const std::string& commit_id)
 // associated with the commit id. The history is kept intact and a new commit is generated
 // and logged for this change.
 // Repository must be initialized.
+// Revert not allowed if there are staged or unmodified changes.
+// Revert only allowed with a commit id from the history of the current branch
 {
-
-    // TODO: Revert should not work if there are staged or unmodified changes
-    // TODO: Revert should only work with a commit id from the history of the current branch
     // TODO: Index file should be rewritten to match old commit id.
 
     bool is_initialized = initialized();
@@ -204,62 +210,110 @@ void Repository::revert(const std::string& commit_id)
     }
     else
     {
-        // Assemble commit info and log entry
-        CommitInfo commit;
-        LogEntry log_entry;
-                    
-        commit.author = "Author";
-        log_entry.author = commit.author;
-        auto now = std::chrono::system_clock::now();
-        commit.timestamp = timepointToString(now);
-        log_entry.timestamp = commit.timestamp;
-        commit.message = "Reverting to " + commit_id;    
-        log_entry.message = commit.message;    
-        commit.id = sha1(commit.author + commit.timestamp + commit.message);
-        log_entry.new_commit_id = commit.id;
-        // Retrieve parent commit info
-        CommitInfo parent_commit_info;
-        get_previous_commit_info(parent_commit_info);
-        commit.parent_1_id = parent_commit_info.id;
-        log_entry.old_commit_id = parent_commit_info.id;
+        // Block checkout if there are any staged or unstaged modified files 
+        std::vector<std::string> staged;
+        std::vector<std::string> modified;
+        std::vector<std::string> untracked;
 
-        // First retrieve old commit info 
-        CommitInfo old_commit_info;
-        load_commit_info(commit_id, old_commit_info);
+        get_working_directory_files_statuses(staged, modified, untracked);
 
-        // Retrieve file hashes from the old commit
-        for(auto const& pair : old_commit_info.file_hashes)
+        if(staged.size() || modified.size())
         {
-            commit.file_hashes[pair.first] = pair.second;
+            std::cout << "ERROR: Cannot revert while there are modified or staged (uncommitted) files." << std::endl;
             
-            // If the current hash is different from the old hash, 
-            // move blobs associated with old commit id back to working directory
-
-            std::string current_hash = get_file_hash(pair.first);
-
-            if(current_hash != pair.second)
+            if(staged.size())
             {
-                // remove file from working directory first
-                std::filesystem::remove(pair.first);
-                // now replace it with old version
-                std::filesystem::copy_file(
-                    MINIGIT_BLOBS_PATH + pair.second, 
-                    pair.first, 
-                    std::filesystem::copy_options::overwrite_existing);
-            }        
+                std::cout << "Changes to be committed:" << std::endl;
+                for(auto file : staged)
+                {
+                    std::cout << "\t" << file << std::endl;
+                }
+            }
+
+            if(modified.size())
+            {
+                std::cout << "Changes not staged for commit:" << std::endl;
+                for(auto file : modified)
+                {
+                    std::cout << "\t" << file << std::endl;
+                }
+            }                 
         }
+        else // There are no staged or modified files
+        {
 
-        // Write commit ID in corresponding branch file
-        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
-        branch_file << commit.id;
-        branch_file.close();
+            if(!is_revert_commit_id_valid(commit_id))
+            {
+                std::cout << "ERROR: commit id is not valid for this branch." << std::endl; 
+            }
+            else
+            {
+                // Assemble commit info and log entry
+                CommitInfo commit;
+                LogEntry log_entry;
+                            
+                commit.author = "Author";
+                log_entry.author = commit.author;
+                auto now = std::chrono::system_clock::now();
+                commit.timestamp = timepointToString(now);
+                log_entry.timestamp = commit.timestamp;
+                commit.message = "Reverting to " + commit_id;    
+                log_entry.message = commit.message;    
+                commit.id = sha1(commit.author + commit.timestamp + commit.message);
+                log_entry.new_commit_id = commit.id;
+                // Retrieve parent commit info
+                CommitInfo parent_commit_info;
+                get_previous_commit_info(parent_commit_info);
+                commit.parent_1_id = parent_commit_info.id;
+                log_entry.old_commit_id = parent_commit_info.id;
 
-        // Write JSON file containing commit info 
-        write_commit_info(commit);
+                // First retrieve old commit info 
+                CommitInfo old_commit_info;
+                load_commit_info(commit_id, old_commit_info);
 
-        // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-        write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
-        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+                // Retrieve file hashes from the old commit
+                for(auto const& pair : old_commit_info.file_hashes)
+                {
+                    commit.file_hashes[pair.first] = pair.second;
+                    
+                    // If the current hash is different from the old hash, 
+                    // move blobs associated with old commit id back to working directory
+
+                    std::string current_hash = get_file_hash(pair.first);
+
+                    if(current_hash != pair.second)
+                    {
+                        // remove file from working directory first
+                        std::filesystem::remove(pair.first);
+                        // now replace it with old version
+                        std::filesystem::copy_file(
+                            MINIGIT_BLOBS_PATH + pair.second, 
+                            pair.first, 
+                            std::filesystem::copy_options::none);
+
+                        // Make sure to copy timestamp as well, otherwise the hash will differ
+                        auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
+                        std::filesystem::last_write_time(pair.first,  timestamp);
+                        
+                    }        
+                }
+
+                // Write index file to match old commit info file hashes
+                write_tracked_files(old_commit_info.file_hashes);
+
+                // Write commit ID in corresponding branch file
+                std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                branch_file << commit.id;
+                branch_file.close();
+
+                // Write JSON file containing commit info 
+                write_commit_info(commit);
+
+                // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+                write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+                write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+            }
+        }
     }   
 }
 
@@ -418,7 +472,14 @@ void Repository::checkout(const std::string& branch)
                     std::filesystem::copy_file(
                         MINIGIT_BLOBS_PATH + pair.second, 
                         pair.first, 
-                        std::filesystem::copy_options::overwrite_existing);
+                        std::filesystem::copy_options::none);
+
+                    // Make sure to copy timestamp as well, otherwise the hash will differ
+                    auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
+                    std::filesystem::last_write_time(pair.first, timestamp);
+
+                    // std::cout << "Timestamp blob: " << 
+
                 }
 
                 // Now log this HEAD change in the HEAD log
@@ -683,4 +744,22 @@ void Repository::get_working_directory_files_statuses(
             untracked.push_back(file);
         }
     }
+}
+
+bool Repository::is_revert_commit_id_valid(std::string commit_id) const
+// Checks in the branch log to see if the commit id is found
+{
+    bool is_valid = false;
+    std::vector<LogEntry> entries;
+
+    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
+    for(auto const& entry : entries)
+    {
+        if(entry.new_commit_id == commit_id)
+        {
+            is_valid = true;
+            break;
+        } 
+    }
+    return is_valid;
 }

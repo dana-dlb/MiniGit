@@ -314,6 +314,7 @@ class Branch(unittest.TestCase):
         minigit_run("init")
 
     def tearDown(self):
+        remove_files()
         remove_repository()
 
     def test_incorrect_usage(self):
@@ -453,7 +454,9 @@ class Branch(unittest.TestCase):
         self.assertEqual(head_log_data["log"][-1]["message"], "Switched to branch master")
 
         # Switch back to dev_branch_1
-        minigit_run("checkout", "dev_branch_1")
+        result = minigit_run("checkout", "dev_branch_1")
+        # TODO: track this testcase as the following assert randomly fails
+        self.assertEqual(result.stdout, "")
         # HEAD should point to dev_branch_1 again
         with open(".minigit/HEAD", "r") as file:
             self.assertEqual(file.read(), "dev_branch_1")
@@ -471,6 +474,137 @@ class Branch(unittest.TestCase):
         self.assertEqual(head_log_data["log"][-1]["old_commit_id"], master_head_id)
         self.assertEqual(head_log_data["log"][-1]["new_commit_id"], dev_branch_1_head_id)
         self.assertEqual(head_log_data["log"][-1]["message"], "Switched to branch dev_branch_1")
+
+
+class Revert(unittest.TestCase):
+
+    def setUp(self):
+        remove_repository()
+        minigit_run("init")
+
+    def tearDown(self):
+        remove_files()
+        remove_repository()
+
+    def test_incorrect_usage(self):
+        result = minigit_run("revert")
+        self.assertRegex(result.stdout, "Usage: minigit revert <commit_id>")
+
+    def test_repo_not_initialized(self):
+        remove_repository()
+        result = minigit_run("revert", "some_id")
+        self.assertRegex(result.stdout, "Error: Repository not initialized.")
+
+    def test_revert_with_staged_changes(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Retrieve HEAD id to later revert to it
+        with open(".minigit/refs/heads/master", "r") as file:
+            commit_id_1 = file.read()
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        result = minigit_run("revert", commit_id_1)
+        self.assertRegex(result.stdout, "ERROR: Cannot revert while there "
+                                        "are modified or staged \\(uncommitted\\) files.\n"
+                                        "Changes to be committed:\n\tfile1.txt\n")
+
+    def test_revert_with_modified_files(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Retrieve HEAD id to later revert to it
+        with open(".minigit/refs/heads/master", "r") as file:
+            commit_id_1 = file.read()
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        result = minigit_run("revert", commit_id_1)
+        self.assertRegex(result.stdout, "ERROR: Cannot revert while there "
+                                        "are modified or staged \\(uncommitted\\) files.\n"
+                                        "Changes not staged for commit:\n\tfile1.txt\n")
+
+    def test_revert_to_id_from_another_branch(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Changed file1.txt")
+        # Retrieve HEAD id to later revert to it
+        with open(".minigit/refs/heads/dev_branch_1", "r") as file:
+            commit_id_1 = file.read()
+        # Now switch back to master
+        minigit_run("checkout", "master")
+        result = minigit_run("revert", commit_id_1)
+        self.assertRegex(result.stdout, "ERROR: commit id is not valid for this branch.")
+
+    def test_successful_revert(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Retrieve HEAD id to later revert to it
+        with open(".minigit/refs/heads/master", "r") as file:
+            commit_id_1 = file.read()
+        # Retrieve index data which should be restored when reverting to commit_id_1
+        with open(".minigit/index.json", "r") as file:
+           index_data_1 = json.load(file)
+        # Make a change to file1.txt, then stage and commit it
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Changed file1.txt")
+        # Retrieve HEAD id to later revert to it
+        with open(".minigit/refs/heads/master", "r") as file:
+            commit_id_2 = file.read()
+        # Retrieve index data to compare with previous index data
+        with open(".minigit/index.json", "r") as file:
+            index_data_2 = json.load(file)
+        self.assertNotEqual(index_data_1, index_data_2)
+        result = minigit_run("revert", commit_id_1)
+        self.assertEqual(result.stdout, "")
+        # Check if the index has been reverted to old version
+        with open(".minigit/index.json", "r") as file:
+            restored_index_data = json.load(file)
+        self.assertEqual(restored_index_data, index_data_1)
+        # Check working directory has been restored
+        with open("file1.txt", "r") as file:
+            self.assertEqual(file.read(), "Some text")
+        # Check logs have been updated
+        # First check the HEAD log
+        with open(".minigit/logs/HEAD", "r") as file:
+            head_log_data = json.load(file)
+        self.assertEqual(head_log_data["log"][-1]["old_commit_id"], commit_id_2)
+        # A new commit id is generated for the revert
+        self.assertNotEqual(head_log_data["log"][-1]["new_commit_id"], commit_id_2)
+        self.assertNotEqual(head_log_data["log"][-1]["new_commit_id"], commit_id_1)
+        self.assertEqual(head_log_data["log"][-1]["message"], "Reverting to " + commit_id_1)
+        # Now check the branch log
+        with open(".minigit/logs/refs/heads/master", "r") as file:
+            branch_log_data = json.load(file)
+        self.assertEqual(branch_log_data["log"][-1]["old_commit_id"], commit_id_2)
+        # A new commit id is generated for the revert
+        self.assertNotEqual(branch_log_data["log"][-1]["new_commit_id"], commit_id_2)
+        self.assertNotEqual(branch_log_data["log"][-1]["new_commit_id"], commit_id_1)
+        self.assertEqual(branch_log_data["log"][-1]["message"], "Reverting to " + commit_id_1)
+        # Check working directory has been reverted
+        with open("file1.txt", "r") as file:
+            self.assertEqual(file.read(), "Some text")
 
 
 if __name__ == '__main__':
