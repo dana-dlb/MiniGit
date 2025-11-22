@@ -264,7 +264,7 @@ void Repository::revert(const std::string& commit_id)
 }
 
 void Repository::print_log() const
-// Print log information (list of commits) in reverse chronological order. 
+// Print log information for the current branch (list of commits) in reverse chronological order. 
 // Repository must be initialized.
 {
     bool is_initialized = initialized();
@@ -296,6 +296,7 @@ void Repository::print_log() const
 
 void Repository::create_branch(const std::string& branch)
 // Creates a new branch but does not switch to it.  
+// Precondition: There is at least a commit on the current branch
 {
     // First check if repository is initialized
     bool is_initialized = initialized();
@@ -305,26 +306,39 @@ void Repository::create_branch(const std::string& branch)
     }
     else
     { 
-        // Copy head commit id to the branch head file
-        std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
-        std::stringstream buffer;
-        buffer << head.rdbuf();
-        std::string commit_id = buffer.str();
-        head.close();
-        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + branch);
-        branch_file << commit_id;
-        branch_file.close();        
+        // Can only create a new branch if there is at least a commit on the current branch
 
-        // Copy last log entry for the current branch to the new branch log file
-        std::vector<LogEntry> entries;
-        read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);   
+        if(!std::filesystem::exists(MINIGIT_BRANCHES_PATH + get_current_branch()))
+        {
+            std::cout << "ERROR: Cannot create new branch since there are no commits on the current branch: " 
+                << get_current_branch() 
+                << std::endl;
+        }
+        else
+        {
+            // Copy head commit id to the branch head file
+            std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+            std::stringstream buffer;
+            buffer << head.rdbuf();
+            std::string commit_id = buffer.str();
+            head.close();
+            std::ofstream branch_file(MINIGIT_BRANCHES_PATH + branch);
+            branch_file << commit_id;
+            branch_file.close();        
 
-        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + branch, entries.back());
-
+            // Copy last log entry for the current branch to the new branch log file
+            std::vector<LogEntry> entries;
+            read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);   
+            write_log_entry(MINIGIT_BRANCHES_LOG_PATH + branch, entries.back());
+        }
     }
 }
 
 void Repository::checkout(const std::string& branch)
+// Checkout a branch (the index is reset to the last commit of the new branch, so is the working directory)
+// Preconditions: - repository is initialized
+//                - branch must exist
+//                - there are no staged or modified files
 {
     // First check if repository is initialized
     bool is_initialized = initialized();
@@ -373,10 +387,17 @@ void Repository::checkout(const std::string& branch)
             }
             else // Preconditions are met, branch can be checked out
             {
+                // Retrieve old HEAD id 
+                std::ifstream branch_head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+                std::stringstream buffer;
+                buffer << branch_head.rdbuf();
+                std::string old_commit_id = buffer.str();
+                branch_head.close();
+
                 // Point HEAD to the new branch
                 std::ofstream head(MINIGIT_HEAD_PATH);
                 head << branch;
-                head.close();
+                head.close();            
 
                 // Reset the index to the latest commit of the new branch
                 CommitInfo commit_info;
@@ -399,6 +420,20 @@ void Repository::checkout(const std::string& branch)
                         pair.first, 
                         std::filesystem::copy_options::overwrite_existing);
                 }
+
+                // Now log this HEAD change in the HEAD log
+                LogEntry log_entry;
+                // TODO: Read author name from config file               
+                log_entry.author = "Author";
+                auto now = std::chrono::system_clock::now();
+                log_entry.timestamp = timepointToString(now);
+                log_entry.message = "Switched to branch " + branch;    
+                log_entry.new_commit_id = commit_info.id;
+                log_entry.old_commit_id = old_commit_id;
+
+                // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+                write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+
             }         
         }
     }
@@ -594,7 +629,8 @@ void Repository::get_previous_commit_info(CommitInfo& commit_info) const
     // in the meantime.
 
     std::vector<LogEntry> entries;
-    read_log(MINIGIT_HEAD_LOG_PATH, entries);
+
+    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
     if(entries.size() > 0)
     {
         load_commit_info(entries.back().new_commit_id, commit_info);
