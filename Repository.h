@@ -33,8 +33,11 @@ class Repository
         std::string get_current_branch() const;
         std::string get_file_hash(std::string filename) const;
         void get_previous_commit_info(CommitInfo& commit_info) const;
+        void get_working_directory_files_statuses(std::vector<std::string>& staged, 
+            std::vector<std::string>& modified, 
+            std::vector<std::string>& untracked) const;
+        
 
-        std::unordered_map<std::string, CommitInfo> branches;
 };
 
 #endif

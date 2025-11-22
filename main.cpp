@@ -57,7 +57,6 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        std::cout << "Committing changes: \"" << message << "\"\n";
         repository.commit(message);
     }
 
@@ -120,7 +119,7 @@ int main(int argc, char* argv[])
     else 
     {
         std::cout << "Unknown command: " << command << "\n";
-        std::cout << "Available commands: init, add, commit, status\n";
+        std::cout << "Available commands: init, add, commit, status, log, revert, branch, checkout\n";
         return 1;
     }
 

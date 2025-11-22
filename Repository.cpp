@@ -123,52 +123,66 @@ void Repository::commit(const std::string& message)
     }
     else
     {
-        // Assemble commit info and log entry
-        CommitInfo commit;
-        LogEntry log_entry;
-        
-        load_tracked_files(commit.file_hashes);
-        // TODO: Read author name from config file               
-        commit.author = "Author";
-        log_entry.author = commit.author;
-        auto now = std::chrono::system_clock::now();
-        commit.timestamp = timepointToString(now);
-        log_entry.timestamp = commit.timestamp;
-        commit.message = message;    
-        log_entry.message = commit.message;    
-        commit.id = sha1(commit.author + commit.timestamp + commit.message);
-        log_entry.new_commit_id = commit.id;
-        // Retrieve parent commit info
-        CommitInfo parent_commit_info;
-        get_previous_commit_info(parent_commit_info);
-        commit.parent_1_id = parent_commit_info.id;
-        log_entry.old_commit_id = parent_commit_info.id;
+        // Only commit if there is something staged
+        std::vector<std::string> staged;
+        std::vector<std::string> modified;
+        std::vector<std::string> untracked;
 
-        std::cout << "Files to be commited: " << std::endl;
-        // List only the files that are in the index but are not in the previous commit or the hash has changed.
-        // Under the hood all staged files hashes are saved in the commit info JSON file. 
-        for(auto const& pair : commit.file_hashes)
+        get_working_directory_files_statuses(staged, modified, untracked);
+
+        if(!staged.size())
         {
-            auto search = parent_commit_info.file_hashes.find(pair.first);
-            if(search == parent_commit_info.file_hashes.end() ||
-                    (search != parent_commit_info.file_hashes.end() && 
-                        search->second != pair.second))
-            {
-                std::cout << "\t" << pair.first << std::endl;
-            }  
+            std::cout << "Nothing to commit." << std::endl;
         }
+        else // There are files to be commited
+        {
+            // Assemble commit info and log entry
+            CommitInfo commit;
+            LogEntry log_entry;
+            
+            load_tracked_files(commit.file_hashes);
+            // TODO: Read author name from config file               
+            commit.author = "Author";
+            log_entry.author = commit.author;
+            auto now = std::chrono::system_clock::now();
+            commit.timestamp = timepointToString(now);
+            log_entry.timestamp = commit.timestamp;
+            commit.message = message;    
+            log_entry.message = commit.message;    
+            commit.id = sha1(commit.author + commit.timestamp + commit.message);
+            log_entry.new_commit_id = commit.id;
+            // Retrieve parent commit info
+            CommitInfo parent_commit_info;
+            get_previous_commit_info(parent_commit_info);
+            commit.parent_1_id = parent_commit_info.id;
+            log_entry.old_commit_id = parent_commit_info.id;
 
-        // Write commit ID in corresponding branch file
-        std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
-        branch_file << commit.id;
-        branch_file.close();
+            // Write commit ID in corresponding branch file
+            std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+            branch_file << commit.id;
+            branch_file.close();
 
-        // Write JSON file containing commit info 
-        write_commit_info(commit);
+            // Write JSON file containing commit info 
+            write_commit_info(commit);
 
-        // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-        write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
-        write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+            // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+            write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+            write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+
+            std::cout << "Committed: " << std::endl;
+            // List only the files that are in the index but are not in the previous commit or the hash has changed.
+            // Under the hood all staged files hashes are saved in the commit info JSON file. 
+            for(auto const& pair : commit.file_hashes)
+            {
+                auto search = parent_commit_info.file_hashes.find(pair.first);
+                if(search == parent_commit_info.file_hashes.end() ||
+                        (search != parent_commit_info.file_hashes.end() && 
+                            search->second != pair.second))
+                {
+                    std::cout << "\t" << pair.first << std::endl;
+                }  
+            }
+        }
     }
 }
 
@@ -178,6 +192,11 @@ void Repository::revert(const std::string& commit_id)
 // and logged for this change.
 // Repository must be initialized.
 {
+
+    // TODO: Revert should not work if there are staged or unmodified changes
+    // TODO: Revert should only work with a commit id from the history of the current branch
+    // TODO: Index file should be rewritten to match old commit id.
+
     bool is_initialized = initialized();
     if(!is_initialized)
     {
@@ -305,21 +324,84 @@ void Repository::create_branch(const std::string& branch)
     }
 }
 
-
 void Repository::checkout(const std::string& branch)
 {
-    //TODO:implement
+    // First check if repository is initialized
+    bool is_initialized = initialized();
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    { 
+        // Check if the branch exists
+        const std::filesystem::path branch_path {MINIGIT_BRANCHES_PATH + branch};
+        if(!std::filesystem::exists(branch_path))
+        {
+            std::cout << "ERROR: Branch does not exist." << std::endl;
+        }
+        else // branch exists
+        {
+            // Block checkout if there are any staged or unstaged modified files 
+            std::vector<std::string> staged;
+            std::vector<std::string> modified;
+            std::vector<std::string> untracked;
 
-    // First check if repository is initialized 
+            get_working_directory_files_statuses(staged, modified, untracked);
 
-    // Check if the branch exists
+            if(staged.size() || modified.size())
+            {
+                std::cout << "ERROR: Cannot checkout another branch while there are modified or staged (uncommitted) files." << std::endl;
+                
+                if(staged.size())
+                {
+                    std::cout << "Changes to be committed:" << std::endl;
+                    for(auto file : staged)
+                    {
+                        std::cout << "\t" << file << std::endl;
+                    }
+                }
 
-    // Block checkout if there are any staged or unstaged modified files 
-    
-    // Reset the index to the latest commit of the new branch
+                if(modified.size())
+                {
+                    std::cout << "Changes not staged for commit:" << std::endl;
+                    for(auto file : modified)
+                    {
+                        std::cout << "\t" << file << std::endl;
+                    }
+                }                 
+            }
+            else // Preconditions are met, branch can be checked out
+            {
+                // Point HEAD to the new branch
+                std::ofstream head(MINIGIT_HEAD_PATH);
+                head << branch;
+                head.close();
 
-    // Replace the working directory to the latest commit of the new branch
+                // Reset the index to the latest commit of the new branch
+                CommitInfo commit_info;
+                get_previous_commit_info(commit_info);
+                write_tracked_files(commit_info.file_hashes);
 
+                // Replace the working directory to the latest commit of the new branch
+                
+                for(auto const& pair : commit_info.file_hashes)
+                {
+                    // remove file from working directory first, if it exists
+                    if(std::filesystem::exists(pair.first))
+                    {
+                        std::filesystem::remove(pair.first);
+                    }
+                   
+                    // now replace it with latest version in the new branch
+                    std::filesystem::copy_file(
+                        MINIGIT_BLOBS_PATH + pair.second, 
+                        pair.first, 
+                        std::filesystem::copy_options::overwrite_existing);
+                }
+            }         
+        }
+    }
 }
 
 void Repository::print_branches()
@@ -357,89 +439,40 @@ void Repository::status()
     {
         std::cout<< "On branch " << get_current_branch() << std::endl;
 
-        std::vector<std::string> working_directory_files;
-        load_working_directory_files(working_directory_files);
+        std::vector<std::string> staged;
+        std::vector<std::string> modified;
+        std::vector<std::string> untracked;
 
-        std::unordered_map<std::string, std::string> tracked_files;
-        bool index_exists = load_tracked_files(tracked_files);
+        get_working_directory_files_statuses(staged, modified, untracked);
 
-        if(!index_exists)
+        if(staged.size())
         {
-            std::cout << "Untracked files:" << std::endl;
-            for(auto file : working_directory_files)
+            std::cout << "Changes to be committed:" << std::endl;
+            for(auto file : staged)
             {
                 std::cout << "\t" << file << std::endl;
             }
         }
-        else
-        {           
-            std::vector<std::string> staged;
-            std::vector<std::string> modified;
-            std::vector<std::string> untracked;
-            CommitInfo head;
-            get_previous_commit_info(head);
 
-            for(auto file : working_directory_files)
+        if(modified.size())
+        {
+            std::cout << "Changes not staged for commit:" << std::endl;
+            for(auto file : modified)
             {
-                // A file that is in the working directory but not in the index is untracked.
-                // A file that is in the index but has a different hash than current hash is modified.
-                // A file that is in the index but not in the HEAD 
-                //  (or has a different hash in the index than in the HEAD, or if HEAD has not been commited yet) is staged.
-
-                if(auto search = tracked_files.find(file); search != tracked_files.end())
-                {
-                    std::string current_hash = get_file_hash(file);
-                    if(search->second != current_hash)
-                    {
-                        modified.push_back(file);
-                    }
-
-                    if(auto search_head = head.file_hashes.find(file); search_head != head.file_hashes.end())
-                    {
-                        if(search_head->second != search->second)
-                        {
-                            staged.push_back(file);
-                        }
-                    }
-                    else // File not found in HEAD
-                    {
-                        staged.push_back(file);
-                    }
-                }
-                else // File not found in index
-                {
-                    untracked.push_back(file);
-                }
-            }
-
-            if(staged.size())
-            {
-                std::cout << "Changes to be commited:" << std::endl;
-                for(auto file : staged)
-                {
-                    std::cout << "\t" << file << std::endl;
-                }
-            }
-
-            if(modified.size())
-            {
-                std::cout << "Changes not staged for commit:" << std::endl;
-                for(auto file : modified)
-                {
-                    std::cout << "\t" << file << std::endl;
-                }
-            }
-
-            if(untracked.size())
-            {
-                std::cout << "Untracked files:" << std::endl;
-                for(auto file : untracked)
-                {
-                    std::cout << "\t" << file << std::endl;
-                }
+                std::cout << "\t" << file << std::endl;
             }
         }
-    }    
+
+        if(untracked.size())
+        {
+            std::cout << "Untracked files:" << std::endl;
+            for(auto file : untracked)
+            {
+                std::cout << "\t" << file << std::endl;
+            }
+        }
+    }
+       
 }
 
 bool Repository::initialized() const
@@ -565,5 +598,53 @@ void Repository::get_previous_commit_info(CommitInfo& commit_info) const
     if(entries.size() > 0)
     {
         load_commit_info(entries.back().new_commit_id, commit_info);
+    }
+}
+
+void Repository::get_working_directory_files_statuses(
+    std::vector<std::string>& staged, 
+    std::vector<std::string>& modified, 
+    std::vector<std::string>& untracked) const
+{
+    std::vector<std::string> working_directory_files;
+    load_working_directory_files(working_directory_files);
+
+    std::unordered_map<std::string, std::string> tracked_files;
+    load_tracked_files(tracked_files);
+
+    CommitInfo head;
+    get_previous_commit_info(head);
+
+    for(auto file : working_directory_files)
+    {
+        // A file that is in the working directory but not in the index is untracked.
+        // A file that is in the index but has a different hash than current hash is modified.
+        // A file that is in the index but not in the HEAD 
+        //  (or has a different hash in the index than in the HEAD, or if HEAD has not been commited yet) is staged.
+
+        if(auto search = tracked_files.find(file); search != tracked_files.end())
+        {
+            std::string current_hash = get_file_hash(file);
+            if(search->second != current_hash)
+            {
+                modified.push_back(file);
+            }
+
+            if(auto search_head = head.file_hashes.find(file); search_head != head.file_hashes.end())
+            {
+                if(search_head->second != search->second)
+                {
+                    staged.push_back(file);
+                }
+            }
+            else // File not found in HEAD
+            {
+                staged.push_back(file);
+            }
+        }
+        else // File not found in index
+        {
+            untracked.push_back(file);
+        }
     }
 }
