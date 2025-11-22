@@ -11,6 +11,12 @@ def remove_repository():
         shutil.rmtree(dir_path)
 
 
+def remove_files():
+    for filename in ["file1.txt", "file2.txt", "file3.txt"]:
+        if os.path.exists(filename):
+            os.remove(filename)
+
+
 def minigit_run(*args):
     result = subprocess.run(
         ["C:\\Users\\danab\\Documents\\CourseWeb\\cpp2\\PetProjects\\Minigit\\main.exe", *args],
@@ -55,6 +61,7 @@ class Status(unittest.TestCase):
         minigit_run("init")
 
     def tearDown(self):
+        remove_files()
         remove_repository()
 
     def test_repo_not_initialized(self):
@@ -67,7 +74,6 @@ class Status(unittest.TestCase):
         f1.close()
         result = minigit_run("status")
         self.assertRegex(result.stdout, "Untracked files:\n\tfile1.txt")
-        os.remove("file1.txt")
 
     def test_files_statuses(self):
         f1 = open("file1.txt", "w")
@@ -104,10 +110,6 @@ class Status(unittest.TestCase):
         result = minigit_run("status")
         self.assertNotRegex(result.stdout, "Changes to be committed")
 
-        os.remove("file1.txt")
-        os.remove("file2.txt")
-        os.remove("file3.txt")
-
 
 class Staging(unittest.TestCase):
 
@@ -116,6 +118,7 @@ class Staging(unittest.TestCase):
         minigit_run("init")
 
     def tearDown(self):
+        remove_files()
         remove_repository()
 
     def test_incorrect_usage(self):
@@ -146,7 +149,6 @@ class Staging(unittest.TestCase):
         content = f1_copy.read()
         self.assertEqual(content, "Some text")
         f1_copy.close()
-        os.remove("file1.txt")
 
 
 class Commit(unittest.TestCase):
@@ -156,6 +158,7 @@ class Commit(unittest.TestCase):
         minigit_run("init")
 
     def tearDown(self):
+        remove_files()
         remove_repository()
 
     def test_incorrect_usage(self):
@@ -180,7 +183,6 @@ class Commit(unittest.TestCase):
         # try committing again
         result = minigit_run("commit", "-m", "\"Committing twice\"")
         self.assertRegex(result.stdout, "Nothing to commit")
-        os.remove("file1.txt")
 
     def test_commit_file_and_logs(self):
         f1 = open("file1.txt", "w")
@@ -266,9 +268,43 @@ class Commit(unittest.TestCase):
         self.assertEqual(branch_log_data["log"][-1]["message"], "\"Changed file1.txt\"")
         self.assertEqual(branch_log_data["log"][-1]["old_commit_id"], commit_id)
 
-        os.remove("file1.txt")
-        os.remove("file2.txt")
-        os.remove("file3.txt")
+
+class Log(unittest.TestCase):
+
+    def setUp(self):
+        remove_repository()
+        minigit_run("init")
+
+    def tearDown(self):
+        remove_files()
+        remove_repository()
+
+    def test_repo_not_initialized(self):
+        remove_repository()
+        result = minigit_run("log")
+        self.assertRegex(result.stdout, "Error: Repository not initialized.")
+
+    def test_log(self):
+
+        # Make a commit and check the right message is in the log
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "\"Created file1.txt\"")
+        result = minigit_run("log")
+        self.assertRegex(result.stdout, "\"Created file1.txt\"")
+
+        # Make another commit and check the log
+        f1 = open("file1.txt", "w")
+        f1.write("\nLine two")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "\"Added a line in file1.txt\"")
+        result = minigit_run("log")
+        # Check also if the log is in reverse chronological order (newest first)
+        self.assertRegex(result.stdout,
+                         "\"Added a line in file1.txt\"\n\ncommit.*\nAuthor:.*\nDate:.*\n\n\"Created file1.txt\"")
 
 
 class Branch(unittest.TestCase):
@@ -290,12 +326,132 @@ class Branch(unittest.TestCase):
         result = minigit_run("branch")
         self.assertRegex(result.stdout, "Error: Repository not initialized.")
 
-    def test_create_and_list_branches(self):
-        raise NotImplementedError
+    def test_create_branch_from_empty_master(self):
+        result = minigit_run("branch", "dev_branch_1")
+        self.assertRegex(result.stdout,
+                         "ERROR: Cannot create new branch since there are no commits on the current branch")
 
-    def test_checkout_branch(self):
-        # Check HEAD log changes when changing to a branch with existing commits
-        raise NotImplementedError
+    def test_create_and_list_branches(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Now get the head commit id to cross-check it after creating new branch
+        with open(".minigit/refs/heads/master", "r") as file:
+            commit_id = file.read()
+
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("branch", "dev_branch_2")
+        # Check that the 'branch' command lists all branches
+        result = minigit_run("branch")
+        self.assertRegex(result.stdout,
+                         "dev_branch_1\ndev_branch_2\nmaster")
+
+        # The commit id of the commit made on master should be in the
+        # logs, as well as the HEAD files of the new created branches
+        with open(".minigit/refs/heads/dev_branch_1", "r") as file:
+            dev_branch_1_head_id = file.read()
+        self.assertEqual(dev_branch_1_head_id, commit_id)
+        with open(".minigit/refs/heads/dev_branch_2", "r") as file:
+            dev_branch_2_head_id = file.read()
+        self.assertEqual(dev_branch_2_head_id, commit_id)
+        # Check one of the log files too
+        with open(".minigit/logs/refs/heads/dev_branch_1", "r") as file:
+            branch_log_data = json.load(file)
+        self.assertEqual(branch_log_data["log"][-1]["new_commit_id"], commit_id)
+        self.assertEqual(branch_log_data["log"][-1]["message"], "Created file1.txt")
+
+    def test_checkout_nonexistent_branch(self):
+        result = minigit_run("checkout", "dev_branch_1")
+        self.assertRegex(result.stdout, "ERROR: Branch does not exist.")
+
+    def test_checkout_new_branch_with_staged_files(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        f2 = open("file2.txt", "w")
+        f2.close()
+        minigit_run("add", "file2.txt")
+        minigit_run("branch", "dev_branch_1")
+        result = minigit_run("checkout", "dev_branch_1")
+        self.assertRegex(result.stdout,
+                         "ERROR: Cannot checkout another branch while "
+                         "there are modified or staged \\(uncommitted\\) files.")
+
+    def test_checkout_new_branch_with_modified_files(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("branch", "dev_branch_1")
+        result = minigit_run("checkout", "dev_branch_1")
+        self.assertRegex(result.stdout,
+                         "ERROR: Cannot checkout another branch while "
+                         "there are modified or staged \\(uncommitted\\) files.")
+
+    def test_checkout_new_branch(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        # Check if current branch has changed
+        with open(".minigit/HEAD", "r") as file:
+            branch_name = file.read()
+        self.assertEqual(branch_name, "dev_branch_1")
+
+    def test_checkout_branch_ahead_of_master(self):
+        # Check HEAD log changes when changing to a branch with different head
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Retrieve HEAD id to check later against new commit on new branch
+        with open(".minigit/refs/heads/master", "r") as file:
+            master_head_id = file.read()
+        # Retrieve index file contents to see if it is restored after switching back to master
+        with open(".minigit/index.json", "r") as file:
+            master_index_data = json.load(file)
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        f1 = open("file1.txt", "w")
+        f1.write("Added some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Added text to file1.txt")
+        # Check HEAD id for the new branch is different from master's HEAD id
+        with open(".minigit/refs/heads/dev_branch_1", "r") as file:
+            dev_branch_1_head_id = file.read()
+        self.assertNotEqual(dev_branch_1_head_id, master_head_id)
+        # New branch index data should now differ from master's
+        with open(".minigit/index.json", "r") as file:
+            dev_branch_1_index_data = json.load(file)
+        self.assertNotEqual(dev_branch_1_index_data, master_index_data)
+        # Now switch back to master
+        minigit_run("checkout", "master")
+        # HEAD should point to master again
+        with open(".minigit/HEAD", "r") as file:
+            self.assertEqual(file.read(), "master")
+        # The index data should be restored to the master's
+        with open(".minigit/index.json", "r") as file:
+            index_data = json.load(file)
+        self.assertEqual(index_data, master_index_data)
+        # The working directory files should be restored to master's last commit
+        f1 = open("file1.txt", "r")
+        self.assertEqual(f1.read(), "")
+        f1.close()
+        # The change in HEAD should be logged
+        with open(".minigit/logs/HEAD", "r") as file:
+            head_log_data = json.load(file)
+        self.assertEqual(head_log_data["log"][-1]["old_commit_id"], dev_branch_1_head_id)
+        self.assertEqual(head_log_data["log"][-1]["new_commit_id"], master_head_id)
+        self.assertEqual(head_log_data["log"][-1]["message"], "\"Created files\"")
+
 
 
 if __name__ == '__main__':
