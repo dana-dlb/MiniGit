@@ -12,7 +12,6 @@ class Repository
         void init();
         void status();
         void add(const std::vector<std::string>& filenames);
-        void remove(const std::vector<std::string>& filenames);
         void commit(const std::string& message);
         void revert(const std::string& commit_id);
         void print_log() const;
@@ -37,6 +36,7 @@ class Repository
             std::vector<std::string>& modified, 
             std::vector<std::string>& untracked) const;
         bool is_revert_commit_id_valid(std::string commit_id) const;
+        void perform_merge(const std::string& base_commit_id, const std::string& branch_1_commit_id, const std::string& branch_2_commit_id) const;
 
 };
 

@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stack>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -104,7 +105,6 @@ void Repository::add(const std::vector<std::string>& filenames)
                     // Make sure to copy timestamp as well, otherwise the hash will differ 
                     auto timestamp = std::filesystem::last_write_time(filename);
                     std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + current_hash,  timestamp);                    
-
                     
                     std::cout << "Added " << filename << std::endl;                
                 }             
@@ -199,10 +199,8 @@ void Repository::revert(const std::string& commit_id)
 // and logged for this change.
 // Repository must be initialized.
 // Revert not allowed if there are staged or unmodified changes.
-// Revert only allowed with a commit id from the history of the current branch
+// Revert only allowed with a commit id from the history of the current branch.
 {
-    // TODO: Index file should be rewritten to match old commit id.
-
     bool is_initialized = initialized();
     if(!is_initialized)
     {
@@ -477,9 +475,6 @@ void Repository::checkout(const std::string& branch)
                     // Make sure to copy timestamp as well, otherwise the hash will differ
                     auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
                     std::filesystem::last_write_time(pair.first, timestamp);
-
-                    // std::cout << "Timestamp blob: " << 
-
                 }
 
                 // Now log this HEAD change in the HEAD log
@@ -518,6 +513,111 @@ void Repository::print_branches()
                 std::cout << dir_entry.path().filename().string() << std::endl;
             }     
         } 
+    } 
+}
+
+void Repository::merge(const std::string& branch)
+// Merges the branch into the current branch
+{
+    bool is_initialized = initialized();
+
+    if(!is_initialized)
+    {
+        std::cout << "Error: Repository not initialized." << std::endl;
+    }
+    else
+    {
+        // Check if branch name is valid
+        bool branch_valid = false;
+
+        for(auto const& dir_entry : std::filesystem::directory_iterator {MINIGIT_BRANCHES_PATH})
+        {
+            if(dir_entry.is_regular_file() && dir_entry.path().filename().string() == branch )
+            {
+                branch_valid = true;
+                break;
+            }     
+        } 
+        if(!branch_valid)
+        {
+            std::cout << "ERROR: no such branch: " + branch << std::endl;
+        }
+        else
+        {
+            // Check if there are staged or modified files
+            std::vector<std::string> staged;
+            std::vector<std::string> modified;
+            std::vector<std::string> untracked;
+
+            get_working_directory_files_statuses(staged, modified, untracked);
+
+            if(staged.size() || modified.size())
+            {
+                std::cout << "ERROR: Cannot merge in branch while there are modified or staged (uncommitted) files." << std::endl;
+                
+                if(staged.size())
+                {
+                    std::cout << "Changes to be committed:" << std::endl;
+                    for(auto file : staged)
+                    {
+                        std::cout << "\t" << file << std::endl;
+                    }
+                }
+
+                if(modified.size())
+                {
+                    std::cout << "Changes not staged for commit:" << std::endl;
+                    for(auto file : modified)
+                    {
+                        std::cout << "\t" << file << std::endl;
+                    }
+                }                 
+            }
+            else // All preconditions are met, proceed with merge
+            {
+                // First find the common ancestor
+                bool ancestor_found = false;
+                std::vector<LogEntry> entries_branch_1;
+                read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries_branch_1);
+                std::string last_commit_branch_1  = entries_branch_1.back().new_commit_id;
+                std::vector<LogEntry> entries_branch_2;
+                read_log(MINIGIT_BRANCHES_LOG_PATH + branch, entries_branch_2);
+                std::string last_commit_branch_2  = entries_branch_2.back().new_commit_id;
+                std::string ancestor_id;
+                std::stack<LogEntry> new_commits;
+
+                while(!ancestor_found && entries_branch_2.size())
+                {
+                    auto entry_2 = entries_branch_2.back();
+                    entries_branch_2.pop_back();
+
+                    for(int i = entries_branch_1.size(); i > 0; i--)
+                    {
+                        if(entry_2.new_commit_id == entries_branch_1[i].new_commit_id)
+                        {
+                            ancestor_found = true;
+                            ancestor_id = entry_2.new_commit_id;
+                        }
+                        else
+                        {
+                            new_commits.push(entry_2);
+                        }
+                    }
+                }
+                if (!ancestor_found)
+                {
+                    std::cout <<"ERROR: common ancestor not found." << std::endl;
+                }
+                else if (ancestor_id == last_commit_branch_2)
+                {
+                    std::cout << "Already up to date." << std::endl;
+                }
+                else
+                {
+                    perform_merge(ancestor_id, last_commit_branch_1, last_commit_branch_2);
+                }
+            }
+        }
     } 
 }
 
@@ -762,4 +862,60 @@ bool Repository::is_revert_commit_id_valid(std::string commit_id) const
         } 
     }
     return is_valid;
+}
+
+void Repository::perform_merge(const std::string& base_commit_id, 
+    const std::string& branch_1_commit_id, 
+    const std::string& branch_2_commit_id) const
+{
+    CommitInfo base_commit_info;
+    CommitInfo branch_1_commit_info;
+    CommitInfo branch_2_commit_info;
+    load_commit_info(base_commit_id, base_commit_info);
+    load_commit_info(branch_1_commit_id, branch_1_commit_info);
+    load_commit_info(branch_2_commit_id, branch_2_commit_info);
+
+    std::unordered_map<std::string, std::string> merged_content = branch_1_commit_info.file_hashes;
+
+    for(auto const& [filename, hash] : branch_2_commit_info.file_hashes)
+    {
+        // Check if the file exists in branch 1, otherwise copy the file
+        if(auto search_1 = branch_1_commit_info.file_hashes.find(filename); 
+                search_1 == branch_1_commit_info.file_hashes.end())
+        {
+            // File not found in branch 1, so add it to the merged content
+            merged_content[filename] = hash;
+        }
+        else // File is found in both branches
+        {
+            if(auto search_base = base_commit_info.file_hashes.find(filename); 
+                search_base == base_commit_info.file_hashes.end())            
+            {
+                // File found in both branches, but not in base, so mark conflict
+                // TODO: mark conflict or try to automerge? 
+            }
+            else // File found in base as well
+            {
+                if(hash != search_1->second) 
+                {
+                    // Hashes are different in the two branches, so check if any of them matches base
+                    if(search_1->second == base_commit_info.file_hashes[filename]) 
+                    {
+                        // Branch 1 hash matches base, so take the branch 2 version in merged_content
+                        merged_content[filename] = hash; 
+                    }
+                    else if (hash == base_commit_info.file_hashes[filename])
+                    {
+                        // Branch 2 hash matches base, so take the branch 1 version in merged_content
+                        merged_content[filename] = hash; 
+                    }
+                    else
+                    {
+                        // File has been changed in both branches, so try line by line merge of file
+                        // TODO: line by line 3-way merge
+                    }
+                }
+            }
+        }
+    }   
 }

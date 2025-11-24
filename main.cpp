@@ -115,6 +115,20 @@ int main(int argc, char* argv[])
             repository.print_branches();
         }
     }
+    else if (command == "merge")
+    {
+        if (argc == 2 || argc > 3) 
+        {
+            std::cout << "Usage: minigit merge <branch name>";
+            return 1;
+        }     
+        else
+        {
+            std::string branch = argv[2];
+            repository.merge(branch);
+        }   
+    }
+
 
     else 
     {

@@ -6,7 +6,7 @@ import json
 
 
 def remove_repository():
-    dir_path = ".minigit";
+    dir_path = ".minigit"
     if os.path.exists(dir_path):
         shutil.rmtree(dir_path)
 
@@ -407,7 +407,7 @@ class Branch(unittest.TestCase):
         self.assertEqual(branch_name, "dev_branch_1")
 
     def test_checkout_branch_ahead_of_master(self):
-        # Check HEAD log changes when changing to a branch with different head
+        # Verify that HEAD log changes when switching to a branch with different head
         f1 = open("file1.txt", "w")
         f1.close()
         minigit_run("add", "file1.txt")
@@ -455,7 +455,6 @@ class Branch(unittest.TestCase):
 
         # Switch back to dev_branch_1
         result = minigit_run("checkout", "dev_branch_1")
-        # TODO: track this testcase as the following assert randomly fails
         self.assertEqual(result.stdout, "")
         # HEAD should point to dev_branch_1 again
         with open(".minigit/HEAD", "r") as file:
@@ -562,7 +561,7 @@ class Revert(unittest.TestCase):
             commit_id_1 = file.read()
         # Retrieve index data which should be restored when reverting to commit_id_1
         with open(".minigit/index.json", "r") as file:
-           index_data_1 = json.load(file)
+            index_data_1 = json.load(file)
         # Make a change to file1.txt, then stage and commit it
         f1 = open("file1.txt", "w")
         f1.write("Changed the text")
@@ -602,9 +601,86 @@ class Revert(unittest.TestCase):
         self.assertNotEqual(branch_log_data["log"][-1]["new_commit_id"], commit_id_2)
         self.assertNotEqual(branch_log_data["log"][-1]["new_commit_id"], commit_id_1)
         self.assertEqual(branch_log_data["log"][-1]["message"], "Reverting to " + commit_id_1)
-        # Check working directory has been reverted
+
+        # Now revert back to commit_id_2
+        result = minigit_run("revert", commit_id_2)
+        self.assertEqual(result.stdout, "")
+        # Check if the index has been reverted to old version
+        with open(".minigit/index.json", "r") as file:
+            restored_index_data = json.load(file)
+        self.assertEqual(restored_index_data, index_data_2)
+        # Check working directory has been restored
         with open("file1.txt", "r") as file:
-            self.assertEqual(file.read(), "Some text")
+            self.assertEqual(file.read(), "Changed the text")
+        # Check logs have been updated
+        # First check the HEAD log
+        with open(".minigit/logs/HEAD", "r") as file:
+            head_log_data = json.load(file)
+        self.assertEqual(head_log_data["log"][-1]["message"], "Reverting to " + commit_id_2)
+        # Now check the branch log
+        with open(".minigit/logs/refs/heads/master", "r") as file:
+            branch_log_data = json.load(file)
+        self.assertEqual(branch_log_data["log"][-1]["message"], "Reverting to " + commit_id_2)
+
+
+class Merge(unittest.TestCase):
+
+    def setUp(self):
+        remove_repository()
+        minigit_run("init")
+
+    def tearDown(self):
+        remove_files()
+        remove_repository()
+
+    def test_incorrect_usage(self):
+        result = minigit_run("merge")
+        self.assertRegex(result.stdout, "Usage: minigit merge <branch name>")
+
+    def test_repo_not_initialized(self):
+        remove_repository()
+        result = minigit_run("merge", "some_id")
+        self.assertRegex(result.stdout, "Error: Repository not initialized.")
+
+    def test_merge_nonexistent_branch(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        result = minigit_run("merge", "some_branch_name")
+        self.assertRegex(result.stdout, "ERROR: no such branch: some_branch_name")
+
+    def test_merge_with_staged_changes(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "ERROR: Cannot merge in branch while there "
+                                        "are modified or staged \\(uncommitted\\) files.\n"
+                                        "Changes to be committed:\n\tfile1.txt\n")
+
+    def test_merge_with_modified_files(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        f1 = open("file1.txt", "w")
+        f1.write("Changed the text")
+        f1.close()
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "ERROR: Cannot merge in branch while there "
+                                        "are modified or staged \\(uncommitted\\) files.\n"
+                                        "Changes not staged for commit:\n\tfile1.txt\n")
 
 
 if __name__ == '__main__':
