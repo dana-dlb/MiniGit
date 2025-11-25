@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -582,28 +583,28 @@ void Repository::merge(const std::string& branch)
                 std::string last_commit_branch_1  = entries_branch_1.back().new_commit_id;
                 std::vector<LogEntry> entries_branch_2;
                 read_log(MINIGIT_BRANCHES_LOG_PATH + branch, entries_branch_2);
+                LogEntry last_entry_branch_2 = entries_branch_2.back();
                 std::string last_commit_branch_2  = entries_branch_2.back().new_commit_id;
                 std::string ancestor_id;
-                std::stack<LogEntry> new_commits;
+                bool conflict = false;
+                bool merge_performed = false;
 
                 while(!ancestor_found && entries_branch_2.size())
                 {
                     auto entry_2 = entries_branch_2.back();
                     entries_branch_2.pop_back();
 
-                    for(int i = entries_branch_1.size(); i > 0; i--)
+                    for(int i = entries_branch_1.size() - 1 ; i >= 0; i--)
                     {
                         if(entry_2.new_commit_id == entries_branch_1[i].new_commit_id)
                         {
                             ancestor_found = true;
                             ancestor_id = entry_2.new_commit_id;
-                        }
-                        else
-                        {
-                            new_commits.push(entry_2);
+                            break;
                         }
                     }
                 }
+
                 if (!ancestor_found)
                 {
                     std::cout <<"ERROR: common ancestor not found." << std::endl;
@@ -614,8 +615,73 @@ void Repository::merge(const std::string& branch)
                 }
                 else
                 {
-                    perform_merge(ancestor_id, last_commit_branch_1, last_commit_branch_2);
+                    perform_merge(ancestor_id, last_commit_branch_1, last_commit_branch_2, merge_performed, conflict);
                 }
+
+                if(!merge_performed)
+                {
+                    // This was a fast-forward merge, so advance HEAD and copy the last commit entry of branch 2 to branch 1 
+                    
+                    // Write commit ID in corresponding branch file
+                    std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                    branch_file << last_commit_branch_2;
+                    branch_file.close();                    
+                    
+                    // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+                    last_entry_branch_2.old_commit_id = last_commit_branch_1;
+                    write_log_entry(MINIGIT_HEAD_LOG_PATH, last_entry_branch_2);
+                    write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), last_entry_branch_2);
+
+                    // Confirm fast-forward merge was performed 
+                    std::cout <<"Fast-forward " << last_commit_branch_1 << " to " << last_commit_branch_2 << std::endl;
+                    
+                }
+                else if(!conflict)
+                {
+                    // Auto-merge succeeded, create new merge commit
+                    // Assemble commit info and log entry
+                    CommitInfo commit;
+                    LogEntry log_entry;
+                    
+                    load_tracked_files(commit.file_hashes);
+                    // TODO: Read author name from config file               
+                    commit.author = "Author";
+                    log_entry.author = commit.author;
+                    auto now = std::chrono::system_clock::now();
+                    commit.timestamp = timepointToString(now);
+                    log_entry.timestamp = commit.timestamp;
+                    commit.message = "Merged " + branch + " into " + get_current_branch();    
+                    log_entry.message = commit.message;    
+                    commit.id = sha1(commit.author + commit.timestamp + commit.message);
+                    log_entry.new_commit_id = commit.id;
+                    commit.parent_1_id = last_commit_branch_1;
+                    commit.parent_2_id = last_commit_branch_2;
+                    log_entry.old_commit_id = last_commit_branch_1;
+
+                    // Write commit ID in corresponding branch file
+                    std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                    branch_file << commit.id;
+                    branch_file.close();
+
+                    // Write JSON file containing commit info 
+                    write_commit_info(commit);
+
+                    // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
+                    write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+                    write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+
+                    std::cout << "Auto-merge succeeded. Merged " << branch << " into " << get_current_branch() << std::endl;
+
+                }
+                else
+                {
+                    // There is a conflict, so cannot merge automatically.
+                    
+                    std::cout << "Automerge failed. Solve merge conflicts manually and run merge again." << std::endl;
+
+                }
+
+                
             }
         }
     } 
@@ -667,6 +733,12 @@ void Repository::status()
                 std::cout << "\t" << file << std::endl;
             }
         }
+
+        if ((!untracked.size()) && (!modified.size()) && !(staged.size()))
+        {
+            std::cout << "Nothing to commit, working tree clean." << std::endl;
+        }
+
     }
        
 }
@@ -866,7 +938,9 @@ bool Repository::is_revert_commit_id_valid(std::string commit_id) const
 
 void Repository::perform_merge(const std::string& base_commit_id, 
     const std::string& branch_1_commit_id, 
-    const std::string& branch_2_commit_id) const
+    const std::string& branch_2_commit_id,
+    bool& merge_performed,
+    bool& conflict) const
 {
     CommitInfo base_commit_info;
     CommitInfo branch_1_commit_info;
@@ -876,6 +950,7 @@ void Repository::perform_merge(const std::string& base_commit_id,
     load_commit_info(branch_2_commit_id, branch_2_commit_info);
 
     std::unordered_map<std::string, std::string> merged_content = branch_1_commit_info.file_hashes;
+    std::vector<std::string> merge_failed_files; 
 
     for(auto const& [filename, hash] : branch_2_commit_info.file_hashes)
     {
@@ -891,8 +966,15 @@ void Repository::perform_merge(const std::string& base_commit_id,
             if(auto search_base = base_commit_info.file_hashes.find(filename); 
                 search_base == base_commit_info.file_hashes.end())            
             {
-                // File found in both branches, but not in base, so mark conflict
-                // TODO: mark conflict or try to automerge? 
+                // The file is not found in base, so peform 2-way merge
+                if(perform_2_way_merge(filename, 
+                                branch_1_commit_info.file_hashes[filename], 
+                                branch_2_commit_info.file_hashes[filename]))
+                {
+                    conflict = true;
+                    merge_failed_files.push_back(filename);
+                } 
+                merge_performed = true;
             }
             else // File found in base as well
             {
@@ -912,10 +994,188 @@ void Repository::perform_merge(const std::string& base_commit_id,
                     else
                     {
                         // File has been changed in both branches, so try line by line merge of file
-                        // TODO: line by line 3-way merge
+                        if(perform_3_way_merge(filename, 
+                                base_commit_info.file_hashes[filename],
+                                branch_1_commit_info.file_hashes[filename], 
+                                branch_2_commit_info.file_hashes[filename]))
+                        {
+                            conflict = true;
+                            merge_failed_files.push_back(filename);
+                        }
+                        merge_performed = true;
                     }
+                }
+                else
+                {
+                    // Do nothing, hashes are the same, so changes necessary
                 }
             }
         }
+    }  
+
+    // Update the index
+    write_tracked_files(merged_content);
+
+    // Update the working directory
+    for(auto const& [filename, hash] : merged_content)
+    {
+        // Make sure that merge conflicts are not overwritten. Only overwrite if not found in merge_failed_files 
+        if(std::find(merge_failed_files.begin(), merge_failed_files.end(), filename) == merge_failed_files.end())
+        {
+            // remove file from working directory first, if it exists
+            if(std::filesystem::exists(filename))
+            {
+                std::filesystem::remove(filename);
+            }
+
+            std::filesystem::copy_file(MINIGIT_BLOBS_PATH + hash,
+                filename,
+                std::filesystem::copy_options::none);
+
+            // Make sure to copy timestamp as well, otherwise the hash will differ 
+            auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + hash);
+            std::filesystem::last_write_time(filename,  timestamp);             
+        }
     }   
+}
+
+bool Repository::perform_2_way_merge(const std::string& filename, const std::string& branch_1_file_hash, const std::string& branch_2_file_hash) const
+{
+    bool conflict = false;
+
+    std::ifstream branch_1_file(MINIGIT_BLOBS_PATH + branch_1_file_hash);  
+    std::stringstream branch_1_file_buffer;
+    branch_1_file_buffer << branch_1_file.rdbuf();
+    std::vector<std::string> branch_1_file_lines;
+    std::string f1_line;
+    while (std::getline(branch_1_file_buffer, f1_line))
+    {
+        branch_1_file_lines.push_back(f1_line);
+    }    
+    branch_1_file.close();
+
+    std::ifstream branch_2_file(MINIGIT_BLOBS_PATH + branch_2_file_hash);  
+    std::stringstream branch_2_file_buffer;
+    branch_2_file_buffer << branch_2_file.rdbuf();
+    std::vector<std::string> branch_2_file_lines;
+    std::string f2_line;
+    while (std::getline(branch_2_file_buffer, f2_line))
+    {
+        branch_2_file_lines.push_back(f2_line);
+    }  
+    branch_2_file.close();    
+
+    size_t max_lines = std::max({branch_1_file_lines.size(), branch_2_file_lines.size()});
+    std::string out;
+
+    for (size_t i = 0; i < max_lines; i++) 
+    {
+        std::string branch_1_file_line = (i < branch_1_file_lines.size() ? branch_1_file_lines[i] : "");
+        std::string branch_2_file_line = (i < branch_2_file_lines.size() ? branch_2_file_lines[i] : "");
+        
+        if (branch_1_file_line == branch_2_file_line) {
+            out += branch_1_file_line + "\n";
+        }
+        else
+        {
+              conflict = true;
+
+            out += "<<<<<<< HEAD\n";
+            if (!branch_1_file_line.empty()) out += branch_1_file_line + "\n";
+            out += "=======\n";
+            if (!branch_2_file_line.empty()) out += branch_2_file_line + "\n";
+            out += ">>>>>>> MERGE\n";
+        }
+    }
+
+    std::ofstream result_file(filename);
+    result_file << out;
+    result_file.close();
+
+    return conflict;
+}
+
+bool Repository::perform_3_way_merge(const std::string& filename, const std::string& base_file_hash, const std::string& branch_1_file_hash, const std::string& branch_2_file_hash) const
+{
+    bool conflict = false;
+
+    std::ifstream base_file(MINIGIT_BLOBS_PATH + base_file_hash);  
+    std::stringstream base_file_buffer;
+    base_file_buffer << base_file.rdbuf();
+    std::vector<std::string> base_file_lines;
+    std::string b_line;
+    while (std::getline(base_file_buffer, b_line))
+    {
+        base_file_lines.push_back(b_line);
+    }    
+    base_file.close();
+
+    std::ifstream branch_1_file(MINIGIT_BLOBS_PATH + branch_1_file_hash);  
+    std::stringstream branch_1_file_buffer;
+    branch_1_file_buffer << branch_1_file.rdbuf();
+    std::vector<std::string> branch_1_file_lines;
+    std::string f1_line;
+    while (std::getline(branch_1_file_buffer, f1_line))
+    {
+        branch_1_file_lines.push_back(f1_line);
+    }    
+    branch_1_file.close();
+
+    std::ifstream branch_2_file(MINIGIT_BLOBS_PATH + branch_2_file_hash);  
+    std::stringstream branch_2_file_buffer;
+    branch_2_file_buffer << branch_2_file.rdbuf();
+    std::vector<std::string> branch_2_file_lines;
+    std::string f2_line;
+    while (std::getline(branch_2_file_buffer, f2_line))
+    {
+        branch_2_file_lines.push_back(f2_line);
+    }  
+    branch_2_file.close();    
+
+    size_t maxLines = std::max({base_file_lines.size(), branch_1_file_lines.size(), branch_2_file_lines.size()});
+    std::string out;
+
+    for (size_t i = 0; i < maxLines; i++) 
+    {
+        std::string base_file_line = (i < base_file_line.size() ? base_file_lines[i] : "");
+        std::string branch_1_file_line = (i < branch_1_file_lines.size() ? branch_1_file_lines[i] : "");
+        std::string branch_2_file_line = (i < branch_2_file_lines.size() ? branch_2_file_lines[i] : "");
+        
+        if (branch_1_file_line == branch_2_file_line) {
+            out += branch_1_file_line + "\n";
+            continue;
+        }
+
+        // Only branch 1 file has changed
+        if(branch_1_file_line != base_file_line && branch_2_file_line == base_file_line)
+        {
+            // Take branch 1 version into final result
+            out += branch_1_file_line + "\n";
+            continue;            
+        }
+
+        //Only branch 2 file has changed
+        if(branch_1_file_line == base_file_line && branch_2_file_line != base_file_line)
+        {
+            // Take branch 2 version into final result
+            out += branch_2_file_line + "\n";
+            continue;            
+        }
+
+        conflict = true;
+
+        out += "<<<<<<< HEAD\n";
+        if (!branch_1_file_line.empty()) out += branch_1_file_line + "\n";
+        out += "=======\n";
+        if (!branch_2_file_line.empty()) out += branch_2_file_line + "\n";
+        out += ">>>>>>> MERGE\n";
+
+    }
+
+    std::ofstream result_file(filename);
+    result_file << out;
+    result_file.close();
+
+    return conflict;    
+
 }

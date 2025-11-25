@@ -128,8 +128,6 @@ int main(int argc, char* argv[])
             repository.merge(branch);
         }   
     }
-
-
     else 
     {
         std::cout << "Unknown command: " << command << "\n";

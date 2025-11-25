@@ -36,7 +36,9 @@ class Repository
             std::vector<std::string>& modified, 
             std::vector<std::string>& untracked) const;
         bool is_revert_commit_id_valid(std::string commit_id) const;
-        void perform_merge(const std::string& base_commit_id, const std::string& branch_1_commit_id, const std::string& branch_2_commit_id) const;
+        void perform_merge(const std::string& base_commit_id, const std::string& branch_1_commit_id, const std::string& branch_2_commit_id, bool& merge_commited, bool& conflict) const;
+        bool perform_2_way_merge(const std::string& filename, const std::string& branch_1_file_hash, const std::string& branch_2_file_hash) const; 
+        bool perform_3_way_merge(const std::string& filename, const std::string& base_file_hash, const std::string& branch_1_file_hash, const std::string& branch_2_file_hash) const; 
 
 };
 

@@ -3,7 +3,7 @@ import subprocess
 import shutil
 import os
 import json
-
+import time
 
 def remove_repository():
     dir_path = ".minigit"
@@ -681,6 +681,112 @@ class Merge(unittest.TestCase):
         self.assertRegex(result.stdout, "ERROR: Cannot merge in branch while there "
                                         "are modified or staged \\(uncommitted\\) files.\n"
                                         "Changes not staged for commit:\n\tfile1.txt\n")
+
+    def test_nothing_to_merge(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "Already up to date.")
+
+    def test_fast_forward_merge(self):
+        f1 = open("file1.txt", "w")
+        f1.write("Some text")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        # Retrieve HEAD id to later check it
+        with open(".minigit/refs/heads/master", "r") as file:
+            head_commit_id_master = file.read()
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        with open("file1.txt", "a") as file:
+            file.write("\nLine 2")
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Added line 2 in file1.txt")
+        with open("file1.txt", "a") as file:
+            file.write("\nLine 3")
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Added line 3 file1.txt")
+        with open(".minigit/refs/heads/dev_branch_1", "r") as file:
+            head_commit_id_dev_branch_1 = file.read()
+        minigit_run("checkout", "master")
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "Fast-forward " + head_commit_id_master + " to " + head_commit_id_dev_branch_1)
+        # Check log is updated
+        with open(".minigit/logs/refs/heads/master", "r") as file:
+            log_data = json.load(file)
+        self.assertEqual(log_data["log"][-1]["message"], "Added line 3 file1.txt")
+        self.assertEqual(log_data["log"][-1]["old_commit_id"], head_commit_id_master)
+        self.assertEqual(log_data["log"][-1]["new_commit_id"], head_commit_id_dev_branch_1)
+        # Check status is clean
+        result = minigit_run("status")
+        self.assertRegex(result.stdout, "Nothing to commit, working tree clean.")
+        # Check working directory is updated
+        with open("file1.txt", "r") as file:
+            self.assertEqual(file.read(), "Some text\nLine 2\nLine 3")
+
+    def test_two_way_auto_merge(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        with open("file2.txt", "w") as file:
+            file.write("New line of text")
+        minigit_run("add", "file2.txt")
+        minigit_run("commit", "-m", "Added some text in file2.txt")
+        minigit_run("checkout", "master")
+        # sleep two seconds to make sure file timestamp is different from the one in dev_branch_1
+        time.sleep(2)
+        with open("file2.txt", "w") as file:
+            file.write("New line of text")
+        result = minigit_run("add", "file2.txt")
+        self.assertRegex(result.stdout, "Added file2.txt")
+        result = minigit_run("commit", "-m", "Changed file2.txt")
+        self.assertRegex(result.stdout, "Committed: \n\tfile2.txt\n")
+        with open(".minigit/refs/heads/master", "r") as file:
+            head_commit_id_master = file.read()
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "Auto-merge succeeded. Merged dev_branch_1 into master")
+        # Now check log
+        with open(".minigit/logs/refs/heads/master", "r") as file:
+            branch_log_data = json.load(file)
+        self.assertEqual(branch_log_data["log"][-1]["old_commit_id"], head_commit_id_master)
+        self.assertEqual(branch_log_data["log"][-1]["message"], "Merged dev_branch_1 into master")
+
+    def test_two_way_auto_merge_fails(self):
+        f1 = open("file1.txt", "w")
+        f1.close()
+        minigit_run("add", "file1.txt")
+        minigit_run("commit", "-m", "Created file1.txt")
+        minigit_run("branch", "dev_branch_1")
+        minigit_run("checkout", "dev_branch_1")
+        with open("file2.txt", "w") as file:
+            file.write("New line of text")
+        minigit_run("add", "file2.txt")
+        minigit_run("commit", "-m", "Added some text in file2.txt")
+        minigit_run("checkout", "master")
+        with open("file2.txt", "w") as file:
+            file.write("New line of text from master")
+        result = minigit_run("add", "file2.txt")
+        self.assertRegex(result.stdout, "Added file2.txt")
+        result = minigit_run("commit", "-m", "Changed file2.txt")
+        self.assertRegex(result.stdout, "Committed: \n\tfile2.txt\n")
+        with open(".minigit/refs/heads/master", "r") as file:
+            head_commit_id_master = file.read()
+        result = minigit_run("merge", "dev_branch_1")
+        self.assertRegex(result.stdout, "Automerge failed. Solve merge conflicts manually and run merge again.")
+        with open("file2.txt", "r") as file:
+            self.assertEqual(file.read(), "<<<<<<< HEAD\n"
+                                          "New line of text from master\n"
+                                          "=======\n"
+                                          "New line of text\n"
+                                          ">>>>>>> MERGE\n")
 
 
 if __name__ == '__main__':
