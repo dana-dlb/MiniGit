@@ -52,10 +52,7 @@ jobs:
     # 8. Run Python autotester
     - name: Run Python autotester
       run: |
-        ls
-        cd tests
-        ls
-        cd MiniGit_autotester
-        ls
+        cd tests/MiniGit_autotester
+        mkdir test_directory
         cd test_directory 
         python ../MiniGit_autotester.py -vvv
