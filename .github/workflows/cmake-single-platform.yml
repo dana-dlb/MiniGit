@@ -1,4 +1,4 @@
-name: CMake Build
+name: CMake CI
 
 on:
   push:
@@ -14,14 +14,40 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y cmake g++
+    # -------------------------------------------------------
+    # Install vcpkg and dependencies
+    # -------------------------------------------------------
+    - name: Setup vcpkg
+      uses: microsoft/vcpkg-action@v1
+      with:
+        revision: master
+        # Optional cache
+        cache: true
 
-    - name: Create build directory
-      run: mkdir build
+    - name: Install dependencies via vcpkg
+      run: |
+        ./vcpkg/vcpkg install nlohmann-json openssl
+        ./vcpkg/vcpkg integrate install
 
+    # -------------------------------------------------------
+    # Configure CMake with vcpkg toolchain
+    # -------------------------------------------------------
     - name: Configure CMake
-      run: cmake -S . -B build
+      run: |
+        cmake -S . -B build \
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
+          -DCMAKE_BUILD_TYPE=Release
 
+    # -------------------------------------------------------
+    # Build
+    # -------------------------------------------------------
     - name: Build
       run: cmake --build build --config Release
+
+    # -------------------------------------------------------
+    # Optional: run tests
+    # -------------------------------------------------------
+    - name: Run tests
+      if: exists('build/CTestTestfile.cmake')
+      working-directory: build
+      run: ctest --output-on-failure
