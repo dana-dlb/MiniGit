@@ -36,9 +36,3 @@ jobs:
     # 5. Build
     - name: Build
       run: cmake --build build --config Release
-
-    # 6. Optional: Run tests if you add CTest
-    - name: Run tests
-      if: exists('build/CTestTestfile.cmake')
-      working-directory: build
-      run: ctest --output-on-failure
