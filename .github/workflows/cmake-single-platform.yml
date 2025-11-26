@@ -14,26 +14,30 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # -----------------------------------------
-    # Setup vcpkg + install deps from vcpkg.json
-    # -----------------------------------------
+    # -------------------------------------------------------
+    # Setup vcpkg (no errors, no submodule, no baseline bugs)
+    # -------------------------------------------------------
     - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
+      uses: friendlyanon/setup-vcpkg@v1
       with:
-        runVcpkgInstall: true   # automatically runs "vcpkg install"
-        vcpkgJsonGlob: "**/vcpkg.json"
+        path: vcpkg
+        cache: true
 
-    # -----------------------------------------
-    # Configure CMake using the vcpkg toolchain
-    # -----------------------------------------
+    # Install deps from vcpkg.json
+    - name: Install dependencies
+      run: ./vcpkg/vcpkg install
+
+    # -------------------------------------------------------
+    # Configure CMake (use vcpkg toolchain)
+    # -------------------------------------------------------
     - name: Configure CMake
       run: |
         cmake -S . -B build \
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_BUILD_TYPE=Release
 
-    # -----------------------------------------
+    # -------------------------------------------------------
     # Build
-    # -----------------------------------------
+    # -------------------------------------------------------
     - name: Build
       run: cmake --build build --config Release
