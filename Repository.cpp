@@ -25,15 +25,15 @@ void Repository::init()
         try 
         {
             std::vector<std::string> directories { MINIGIT_FILES_PATH, 
-                                                    MINIGIT_REFS_PATH,
-                                                    MINIGIT_BRANCHES_PATH,
-                                                    MINIGIT_OBJECTS_PATH,
-                                                    MINIGIT_COMMITS_PATH,
-                                                    MINIGIT_BLOBS_PATH,
-                                                    MINIGIT_TREES_PATH,
-                                                    MINIGIT_LOGS_PATH,
-                                                    MINIGIT_LOG_REFS_PATH,
-                                                    MINIGIT_BRANCHES_LOG_PATH    
+                                                   MINIGIT_REFS_PATH,
+                                                   MINIGIT_BRANCHES_PATH,
+                                                   MINIGIT_OBJECTS_PATH,
+                                                   MINIGIT_COMMITS_PATH,
+                                                   MINIGIT_BLOBS_PATH,
+                                                   MINIGIT_TREES_PATH,
+                                                   MINIGIT_LOGS_PATH,
+                                                   MINIGIT_LOG_REFS_PATH,
+                                                   MINIGIT_BRANCHES_LOG_PATH    
                                                 };
 
             for(auto dir_name : directories)
@@ -57,7 +57,6 @@ void Repository::init()
         std::ofstream head(MINIGIT_HEAD_PATH);
         head << MINIGIT_MASTER_BRANCH_NAME;
         head.close();
-
     }
     else
     {
@@ -78,7 +77,6 @@ void Repository::add(const std::vector<std::string>& filenames)
     else
     {
         // First load the existing index, then update any entries if applicable
-
         std::unordered_map<std::string, std::string> tracked_files;
         load_tracked_files(tracked_files);
 
@@ -312,7 +310,7 @@ void Repository::revert(const std::string& commit_id)
                         // Make sure to copy timestamp as well, otherwise the hash will differ
                         auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
                         std::filesystem::last_write_time(pair.first,  timestamp);
-                        
+                      
                     }        
                 }
 
@@ -738,7 +736,6 @@ void Repository::status()
         {
             std::cout << "You have unmerged paths. Fix conflicts, stage to mark resolutions then commit." << std::endl;
         }
-
 
         std::vector<std::string> staged;
         std::vector<std::string> modified;
@@ -1206,7 +1203,6 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
         out += "=======\n";
         if (!branch_2_file_line.empty()) out += branch_2_file_line + "\n";
         out += ">>>>>>> MERGE\n";
-
     }
 
     std::ofstream result_file(filename);
