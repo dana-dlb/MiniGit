@@ -19,7 +19,7 @@ def remove_files():
 
 def minigit_run(*args):
     result = subprocess.run(
-        ["C:\\Users\\danab\\Documents\\CourseWeb\\cpp2\\PetProjects\\Minigit\\main.exe", *args],
+        ["./build/MiniGit", *args],
         capture_output=True,
         text=True
     )
