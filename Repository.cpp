@@ -24,13 +24,12 @@ void Repository::init()
     {
         try 
         {
-            std::vector<std::string> directories { MINIGIT_FILES_PATH, 
+            std::vector<std::filesystem::path> directories { MINIGIT_FILES_PATH, 
                                                    MINIGIT_REFS_PATH,
                                                    MINIGIT_BRANCHES_PATH,
                                                    MINIGIT_OBJECTS_PATH,
                                                    MINIGIT_COMMITS_PATH,
                                                    MINIGIT_BLOBS_PATH,
-                                                   MINIGIT_TREES_PATH,
                                                    MINIGIT_LOGS_PATH,
                                                    MINIGIT_LOG_REFS_PATH,
                                                    MINIGIT_BRANCHES_LOG_PATH    
@@ -54,7 +53,7 @@ void Repository::init()
         }
 
         // We are now on branch master, so write this information into HEAD
-        std::ofstream head(MINIGIT_HEAD_PATH);
+        std::ofstream head(MINIGIT_HEAD_PATH.string());
         head << MINIGIT_MASTER_BRANCH_NAME;
         head.close();
     }
@@ -97,13 +96,14 @@ void Repository::add(const std::vector<std::string>& filenames)
                     // Save blob for files that are staged, since this is the version that should be commited even
                     // the file is modified before the next commit.
 
+                    std::filesystem::path dest_file_path = MINIGIT_BLOBS_PATH / current_hash;
                     std::filesystem::copy_file(filename, 
-                        MINIGIT_BLOBS_PATH + current_hash, 
+                        dest_file_path, 
                         std::filesystem::copy_options::none);
 
                     // Make sure to copy timestamp as well, otherwise the hash will differ 
                     auto timestamp = std::filesystem::last_write_time(filename);
-                    std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + current_hash,  timestamp);                    
+                    std::filesystem::last_write_time(dest_file_path,  timestamp);                    
                     
                     std::cout << "Added " << filename << std::endl;                
                 }             
@@ -167,7 +167,7 @@ void Repository::commit(const std::string& message)
             {
                 std::filesystem::remove(MINIGIT_MERGING_FLAG_PATH);
                 
-                std::ifstream merge_head(MINIGIT_MERGE_HEAD_PATH);
+                std::ifstream merge_head(MINIGIT_MERGE_HEAD_PATH.string());
                 std::stringstream buffer;
                 buffer << merge_head.rdbuf();
                 std::string other_commit_id = buffer.str();
@@ -183,7 +183,8 @@ void Repository::commit(const std::string& message)
             }    
             
             // Write commit ID in corresponding branch file
-            std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+            std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+            std::ofstream branch_file(file_path.string());
             branch_file << commit.id;
             branch_file.close();
 
@@ -191,8 +192,8 @@ void Repository::commit(const std::string& message)
             write_commit_info(commit);
 
             // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-            write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
-            write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+            write_log_entry(MINIGIT_HEAD_LOG_PATH.string(), log_entry);
+            write_log_entry((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), log_entry);
 
             std::cout << "Committed: " << std::endl;
             // List only the files that are in the index but are not in the previous commit or the hash has changed.
@@ -302,13 +303,14 @@ void Repository::revert(const std::string& commit_id)
                         // remove file from working directory first
                         std::filesystem::remove(pair.first);
                         // now replace it with old version
+                        std::filesystem::path source_file_path = MINIGIT_BLOBS_PATH / pair.second;
                         std::filesystem::copy_file(
-                            MINIGIT_BLOBS_PATH + pair.second, 
+                            source_file_path, 
                             pair.first, 
                             std::filesystem::copy_options::none);
 
                         // Make sure to copy timestamp as well, otherwise the hash will differ
-                        auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
+                        auto timestamp = std::filesystem::last_write_time(source_file_path);
                         std::filesystem::last_write_time(pair.first,  timestamp);
                       
                     }        
@@ -318,7 +320,8 @@ void Repository::revert(const std::string& commit_id)
                 write_tracked_files(old_commit_info.file_hashes);
 
                 // Write commit ID in corresponding branch file
-                std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+                std::ofstream branch_file(file_path.string());
                 branch_file << commit.id;
                 branch_file.close();
 
@@ -326,8 +329,8 @@ void Repository::revert(const std::string& commit_id)
                 write_commit_info(commit);
 
                 // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-                write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
-                write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+                write_log_entry(MINIGIT_HEAD_LOG_PATH.string(), log_entry);
+                write_log_entry((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), log_entry);
             }
         }
     }   
@@ -345,7 +348,7 @@ void Repository::print_log() const
     else
     {    
         std::vector<LogEntry> entries;
-        read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
+        read_log((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), entries);
 
         // Print in reverse order (newest entry first)
         while(entries.size())
@@ -384,7 +387,8 @@ void Repository::create_branch(const std::string& branch)
     { 
         // Can only create a new branch if there is at least a commit on the current branch
 
-        if(!std::filesystem::exists(MINIGIT_BRANCHES_PATH + get_current_branch()))
+        std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+        if(!std::filesystem::exists(file_path))
         {
             std::cout << "ERROR: Cannot create new branch since there are no commits on the current branch: " 
                 << get_current_branch() 
@@ -393,19 +397,20 @@ void Repository::create_branch(const std::string& branch)
         else
         {
             // Copy head commit id to the branch head file
-            std::ifstream head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+            std::ifstream head(file_path.string());  
             std::stringstream buffer;
             buffer << head.rdbuf();
             std::string commit_id = buffer.str();
             head.close();
-            std::ofstream branch_file(MINIGIT_BRANCHES_PATH + branch);
+            std::filesystem::path branch_file_path = MINIGIT_BRANCHES_PATH / branch;
+            std::ofstream branch_file(branch_file_path.string());
             branch_file << commit_id;
             branch_file.close();        
 
             // Copy last log entry for the current branch to the new branch log file
             std::vector<LogEntry> entries;
-            read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);   
-            write_log_entry(MINIGIT_BRANCHES_LOG_PATH + branch, entries.back());
+            read_log((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), entries);   
+            write_log_entry((MINIGIT_BRANCHES_LOG_PATH / branch).string(), entries.back());
         }
     }
 }
@@ -425,7 +430,7 @@ void Repository::checkout(const std::string& branch)
     else
     { 
         // Check if the branch exists
-        const std::filesystem::path branch_path {MINIGIT_BRANCHES_PATH + branch};
+        const std::filesystem::path branch_path = MINIGIT_BRANCHES_PATH / branch;
         if(!std::filesystem::exists(branch_path))
         {
             std::cout << "ERROR: Branch does not exist." << std::endl;
@@ -464,14 +469,15 @@ void Repository::checkout(const std::string& branch)
             else // Preconditions are met, branch can be checked out
             {
                 // Retrieve old HEAD id 
-                std::ifstream branch_head(MINIGIT_BRANCHES_PATH + get_current_branch());  
+                std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+                std::ifstream branch_head(file_path.string());  
                 std::stringstream buffer;
                 buffer << branch_head.rdbuf();
                 std::string old_commit_id = buffer.str();
                 branch_head.close();
 
                 // Point HEAD to the new branch
-                std::ofstream head(MINIGIT_HEAD_PATH);
+                std::ofstream head(MINIGIT_HEAD_PATH.string());
                 head << branch;
                 head.close();            
 
@@ -492,12 +498,12 @@ void Repository::checkout(const std::string& branch)
                    
                     // now replace it with latest version in the new branch
                     std::filesystem::copy_file(
-                        MINIGIT_BLOBS_PATH + pair.second, 
+                        MINIGIT_BLOBS_PATH / pair.second, 
                         pair.first, 
                         std::filesystem::copy_options::none);
 
                     // Make sure to copy timestamp as well, otherwise the hash will differ
-                    auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + pair.second);
+                    auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH / pair.second);
                     std::filesystem::last_write_time(pair.first, timestamp);
                 }
 
@@ -512,7 +518,7 @@ void Repository::checkout(const std::string& branch)
                 log_entry.old_commit_id = old_commit_id;
 
                 // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-                write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
+                write_log_entry(MINIGIT_HEAD_LOG_PATH.string(), log_entry);
 
             }         
         }
@@ -602,10 +608,10 @@ void Repository::merge(const std::string& branch)
                 // First find the common ancestor
                 bool ancestor_found = false;
                 std::vector<LogEntry> entries_branch_1;
-                read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries_branch_1);
+                read_log((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), entries_branch_1);
                 std::string last_commit_branch_1  = entries_branch_1.back().new_commit_id;
                 std::vector<LogEntry> entries_branch_2;
-                read_log(MINIGIT_BRANCHES_LOG_PATH + branch, entries_branch_2);
+                read_log((MINIGIT_BRANCHES_LOG_PATH / branch).string(), entries_branch_2);
                 LogEntry last_entry_branch_2 = entries_branch_2.back();
                 std::string last_commit_branch_2  = entries_branch_2.back().new_commit_id;
                 std::string ancestor_id;
@@ -646,14 +652,15 @@ void Repository::merge(const std::string& branch)
                     // This was a fast-forward merge, so advance HEAD and copy the last commit entry of branch 2 to branch 1 
                     
                     // Write commit ID in corresponding branch file
-                    std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                    std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+                    std::ofstream branch_file(file_path.string());
                     branch_file << last_commit_branch_2;
                     branch_file.close();                    
                     
                     // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
                     last_entry_branch_2.old_commit_id = last_commit_branch_1;
-                    write_log_entry(MINIGIT_HEAD_LOG_PATH, last_entry_branch_2);
-                    write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), last_entry_branch_2);
+                    write_log_entry(MINIGIT_HEAD_LOG_PATH.string(), last_entry_branch_2);
+                    write_log_entry((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), last_entry_branch_2);
 
                     // Confirm fast-forward merge was performed 
                     std::cout <<"Fast-forward " << last_commit_branch_1 << " to " << last_commit_branch_2 << std::endl;
@@ -684,7 +691,8 @@ void Repository::merge(const std::string& branch)
                     log_entry.other_commit_id = last_commit_branch_2;
 
                     // Write commit ID in corresponding branch file
-                    std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
+                    std::filesystem::path file_path = MINIGIT_BRANCHES_PATH / get_current_branch();
+                    std::ofstream branch_file(file_path);
                     branch_file << commit.id;
                     branch_file.close();
 
@@ -692,8 +700,8 @@ void Repository::merge(const std::string& branch)
                     write_commit_info(commit);
 
                     // log commit both in logs/HEAD and in logs/refs/heads/<branch_id>
-                    write_log_entry(MINIGIT_HEAD_LOG_PATH, log_entry);
-                    write_log_entry(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), log_entry);
+                    write_log_entry(MINIGIT_HEAD_LOG_PATH.string(), log_entry);
+                    write_log_entry((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), log_entry);
 
                     std::cout << "Auto-merge succeeded. Merged " << branch << " into " << get_current_branch() << std::endl;
 
@@ -705,11 +713,11 @@ void Repository::merge(const std::string& branch)
                     std::cout << "Automerge failed. Fix conflicts and then commit the result." << std::endl;
                     
                     // Create a merge flag that will be removed when the merge is completed
-                    std::ofstream merge_flag(MINIGIT_MERGING_FLAG_PATH);
+                    std::ofstream merge_flag(MINIGIT_MERGING_FLAG_PATH.string());
                     merge_flag.close();
                     
                     // Store the head commit id of the other branch
-                    std::ofstream merge_head(MINIGIT_MERGE_HEAD_PATH);
+                    std::ofstream merge_head(MINIGIT_MERGE_HEAD_PATH.string());
                     merge_head << last_commit_branch_2;
                     merge_head.close(); 
                 }             
@@ -732,7 +740,7 @@ void Repository::status()
     {
         std::cout<< "On branch " << get_current_branch() << std::endl;
 
-        if(std::filesystem::exists(MINIGIT_MERGING_FLAG_PATH))
+        if(std::filesystem::exists(MINIGIT_MERGING_FLAG_PATH.string()))
         {
             std::cout << "You have unmerged paths. Fix conflicts, stage to mark resolutions then commit." << std::endl;
         }
@@ -801,11 +809,12 @@ bool Repository::load_commit_info(std::string id, CommitInfo& commit_info) const
 // Load commit information from file.
 {
     nlohmann::json json_data;
-    bool file_exists = std::filesystem::exists(MINIGIT_COMMITS_PATH + id);
+    std::filesystem::path file_path = MINIGIT_COMMITS_PATH / id;
+    bool file_exists = std::filesystem::exists(file_path);
     
     if(file_exists)
     {
-        std::ifstream file(MINIGIT_COMMITS_PATH + id);
+        std::ifstream file(file_path);
         file >> json_data;
         commit_info = json_data.get<CommitInfo>();
     }
@@ -818,7 +827,8 @@ void Repository::write_commit_info(const CommitInfo& commit_info) const
 {
     nlohmann::json json_data;
     json_data = commit_info;
-    std::ofstream(MINIGIT_COMMITS_PATH + commit_info.id) << json_data.dump(4);
+    std::filesystem::path file_path = MINIGIT_COMMITS_PATH / commit_info.id;
+    std::ofstream(file_path.string()) << json_data.dump(4);
 }
 
 bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>& tracked_files) const
@@ -827,7 +837,7 @@ bool Repository::load_tracked_files(std::unordered_map<std::string, std::string>
     bool index_exists = std::filesystem::exists(MINIGIT_INDEX_PATH);
     if(index_exists)
     {
-        std::ifstream file(MINIGIT_INDEX_PATH);
+        std::ifstream file(MINIGIT_INDEX_PATH.string());
         nlohmann::json json_data;
         file >> json_data;
         tracked_files = json_data["tracked_files"].get<std::unordered_map<std::string, std::string>>();
@@ -840,7 +850,7 @@ void Repository::write_tracked_files(std::unordered_map<std::string, std::string
 {
     nlohmann::json json_data;
     json_data["tracked_files"] = tracked_files;
-    std::ofstream file(MINIGIT_INDEX_PATH);
+    std::ofstream file(MINIGIT_INDEX_PATH.string());
     file << json_data.dump(4); 
     file.close();
 }
@@ -869,7 +879,7 @@ std::string Repository::get_current_branch() const
 // Returns the current branch name.
 {
     // Get current branch name from the HEAD file
-    std::ifstream head(MINIGIT_HEAD_PATH);  
+    std::ifstream head(MINIGIT_HEAD_PATH.string());  
     std::stringstream buffer;
     buffer << head.rdbuf();
     std::string branch = buffer.str();
@@ -897,7 +907,7 @@ void Repository::get_previous_commit_info(CommitInfo& commit_info) const
 
     std::vector<LogEntry> entries;
 
-    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
+    read_log((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), entries);
     if(entries.size() > 0)
     {
         load_commit_info(entries.back().new_commit_id, commit_info);
@@ -958,7 +968,7 @@ bool Repository::is_revert_commit_id_valid(std::string commit_id) const
     bool is_valid = false;
     std::vector<LogEntry> entries;
 
-    read_log(MINIGIT_BRANCHES_LOG_PATH + get_current_branch(), entries);
+    read_log((MINIGIT_BRANCHES_LOG_PATH / get_current_branch()).string(), entries);
     for(auto const& entry : entries)
     {
         if(entry.new_commit_id == commit_id)
@@ -1062,12 +1072,12 @@ void Repository::perform_merge(const std::string& base_commit_id,
                 std::filesystem::remove(filename);
             }
 
-            std::filesystem::copy_file(MINIGIT_BLOBS_PATH + hash,
+            std::filesystem::copy_file(MINIGIT_BLOBS_PATH / hash,
                 filename,
                 std::filesystem::copy_options::none);
 
             // Make sure to copy timestamp as well, otherwise the hash will differ 
-            auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH + hash);
+            auto timestamp = std::filesystem::last_write_time(MINIGIT_BLOBS_PATH / hash);
             std::filesystem::last_write_time(filename,  timestamp);             
         }
     }   
@@ -1077,7 +1087,7 @@ bool Repository::perform_2_way_merge(const std::string& filename, const std::str
 {
     bool conflict = false;
 
-    std::ifstream branch_1_file(MINIGIT_BLOBS_PATH + branch_1_file_hash);  
+    std::ifstream branch_1_file((MINIGIT_BLOBS_PATH / branch_1_file_hash).string());  
     std::stringstream branch_1_file_buffer;
     branch_1_file_buffer << branch_1_file.rdbuf();
     std::vector<std::string> branch_1_file_lines;
@@ -1088,7 +1098,7 @@ bool Repository::perform_2_way_merge(const std::string& filename, const std::str
     }    
     branch_1_file.close();
 
-    std::ifstream branch_2_file(MINIGIT_BLOBS_PATH + branch_2_file_hash);  
+    std::ifstream branch_2_file((MINIGIT_BLOBS_PATH / branch_2_file_hash).string()); 
     std::stringstream branch_2_file_buffer;
     branch_2_file_buffer << branch_2_file.rdbuf();
     std::vector<std::string> branch_2_file_lines;
@@ -1133,10 +1143,10 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
 {
     bool conflict = false;
 
-    std::ifstream base_file(MINIGIT_BLOBS_PATH + base_file_hash);  
+    std::ifstream base_file((MINIGIT_BLOBS_PATH / base_file_hash).string());  
     std::stringstream base_file_buffer;
     base_file_buffer << base_file.rdbuf();
-    std::vector<std::string> base_file_lines;
+     std::vector<std::string> base_file_lines;
     std::string b_line;
     while (std::getline(base_file_buffer, b_line))
     {
@@ -1144,7 +1154,7 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
     }    
     base_file.close();
 
-    std::ifstream branch_1_file(MINIGIT_BLOBS_PATH + branch_1_file_hash);  
+    std::ifstream branch_1_file((MINIGIT_BLOBS_PATH / branch_1_file_hash).string());  
     std::stringstream branch_1_file_buffer;
     branch_1_file_buffer << branch_1_file.rdbuf();
     std::vector<std::string> branch_1_file_lines;
@@ -1155,7 +1165,7 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
     }    
     branch_1_file.close();
 
-    std::ifstream branch_2_file(MINIGIT_BLOBS_PATH + branch_2_file_hash);  
+    std::ifstream branch_2_file((MINIGIT_BLOBS_PATH / branch_2_file_hash).string());  
     std::stringstream branch_2_file_buffer;
     branch_2_file_buffer << branch_2_file.rdbuf();
     std::vector<std::string> branch_2_file_lines;
@@ -1166,15 +1176,15 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
     }  
     branch_2_file.close();    
 
-    size_t maxLines = std::max({base_file_lines.size(), branch_1_file_lines.size(), branch_2_file_lines.size()});
+    size_t max_lines = std::max({base_file_lines.size(), branch_1_file_lines.size(), branch_2_file_lines.size()});
     std::string out;
 
-    for (size_t i = 0; i < maxLines; i++) 
+    for (size_t i = 0; i < max_lines; i++) 
     {
-        std::string base_file_line = (i < base_file_line.size() ? base_file_lines[i] : "");
+        std::string base_file_line = (i < base_file_lines.size() ? base_file_lines[i] : "");
         std::string branch_1_file_line = (i < branch_1_file_lines.size() ? branch_1_file_lines[i] : "");
         std::string branch_2_file_line = (i < branch_2_file_lines.size() ? branch_2_file_lines[i] : "");
-        
+
         if (branch_1_file_line == branch_2_file_line) {
             out += branch_1_file_line + "\n";
             continue;
@@ -1210,5 +1220,4 @@ bool Repository::perform_3_way_merge(const std::string& filename, const std::str
     result_file.close();
 
     return conflict;    
-
 }

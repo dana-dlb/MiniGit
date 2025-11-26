@@ -19,7 +19,7 @@ def remove_files():
 
 def minigit_run(*args):
     result = subprocess.run(
-        ["./build/MiniGit", *args],
+        ["../../../build/MiniGit", *args],
         capture_output=True,
         text=True
     )
@@ -35,12 +35,6 @@ class Initialization(unittest.TestCase):
         remove_repository()
 
     def test_init_creates_repository(self):
-        # TODO: remove this after fixing GitHub Actions run
-        current_dir = os.getcwd()
-        print("Current Directory" + current_dir)
-        files = [f for f in os.listdir(current_dir)]
-        print(files)
-
         minigit_run("init")
         self.assertTrue(os.path.exists(".minigit"))
 
@@ -52,7 +46,7 @@ class Initialization(unittest.TestCase):
     def test_status_after_initialization(self):
         minigit_run("init")
         result = minigit_run("status")
-        self.assertRegex(result.stdout, "On branch master")
+        self.assertRegex(result.stdout, "On branch master\nNothing to commit, working tree clean.\n")
 
     def test_log_after_initialization(self):
         minigit_run("init")
@@ -150,8 +144,8 @@ class Staging(unittest.TestCase):
             data = json.load(file)
         self.assertIn("file1.txt", data["tracked_files"])
         file_hash = data["tracked_files"]["file1.txt"]
-        self.assertTrue(os.path.exists(".minigit\\objects\\blobs\\" + file_hash))
-        f1_copy = open(".minigit\\objects\\blobs\\" + file_hash, "r")
+        self.assertTrue(os.path.exists(".minigit/objects/blobs/" + file_hash))
+        f1_copy = open(".minigit/objects/blobs/" + file_hash, "r")
         content = f1_copy.read()
         self.assertEqual(content, "Some text")
         f1_copy.close()
@@ -212,9 +206,9 @@ class Commit(unittest.TestCase):
         with open(".minigit/refs/heads/" + branch_name, "r") as file:
             commit_id = file.read()
         # Check commit info file has been written
-        self.assertTrue(os.path.exists(".minigit\\objects\\commits\\" + commit_id))
+        self.assertTrue(os.path.exists(".minigit/objects/commits/" + commit_id))
         # Check commit info
-        with open(".minigit\\objects\\commits\\" + commit_id, "r") as file:
+        with open(".minigit/objects/commits/" + commit_id, "r") as file:
             commit_info = json.load(file)
         self.assertEqual(commit_info["message"], "\"Created files\"")
         self.assertEqual(commit_info["id"], commit_id)
@@ -247,9 +241,9 @@ class Commit(unittest.TestCase):
         with open(".minigit/refs/heads/" + branch_name, "r") as file:
             new_commit_id = file.read()
         # Check commit info file has been written
-        self.assertTrue(os.path.exists(".minigit\\objects\\commits\\" + new_commit_id))
+        self.assertTrue(os.path.exists(".minigit/objects/commits/" + new_commit_id))
         # Check commit info
-        with open(".minigit\\objects\\commits\\" + new_commit_id, "r") as file:
+        with open(".minigit/objects/commits/" + new_commit_id, "r") as file:
             new_commit_info = json.load(file)
         self.assertEqual(new_commit_info["message"], "\"Changed file1.txt\"")
         self.assertEqual(new_commit_info["id"], new_commit_id)
