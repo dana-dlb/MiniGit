@@ -22,8 +22,6 @@ typedef struct CommitInfo
 
 void to_json(nlohmann::json& json_data, const CommitInfo& commit);
 void from_json(const nlohmann::json& json_data, CommitInfo& commit);
-std::string timepointToString(const std::chrono::system_clock::time_point& tp);
-std::chrono::system_clock::time_point stringToTimepoint(const std::string& s);
-
+std::string timepoint_to_string(const std::chrono::system_clock::time_point& tp);
 
 #endif
