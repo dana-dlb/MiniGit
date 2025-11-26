@@ -11,35 +11,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    # -------------------------------------------------------
-    # Setup vcpkg (fetches automatically, no local folder needed)
-    # -------------------------------------------------------
     - name: Setup vcpkg
       uses: friendlyanon/setup-vcpkg@v1
       with:
-        vcpkgGitCommitId: "2024.01.12"  # stable known commit
+        committish: "2025-10-01"  # or a specific commit/tag from vcpkg repo
         cache: true
 
-    # -------------------------------------------------------
-    # Install deps from vcpkg.json
-    # -------------------------------------------------------
     - name: Install dependencies
       run: $VCPKG_ROOT/vcpkg install
 
-    # -------------------------------------------------------
-    # Configure CMake (use vcpkg toolchain)
-    # -------------------------------------------------------
     - name: Configure CMake
       run: |
         cmake -S . -B build \
           -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_BUILD_TYPE=Release
 
-    # -------------------------------------------------------
-    # Build
-    # -------------------------------------------------------
     - name: Build
       run: cmake --build build --config Release
