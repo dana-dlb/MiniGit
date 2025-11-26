@@ -1,7 +1,6 @@
 {
   "name": "minigit",
   "version": "1.0.0",
-  "builtin-baseline": "40d8225d0ef848ff329e16c762a606d791e93e55",
   "dependencies": [
     "nlohmann-json",
     "openssl"
