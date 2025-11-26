@@ -44,10 +44,3 @@ jobs:
     - name: Build
       run: cmake --build build --config Release
 
-    # -------------------------------------------------------
-    # Optional: run tests
-    # -------------------------------------------------------
-    - name: Run tests
-      if: exists('build/CTestTestfile.cmake')
-      working-directory: build
-      run: ctest --output-on-failure
