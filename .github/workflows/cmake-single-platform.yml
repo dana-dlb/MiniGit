@@ -14,33 +14,25 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # -------------------------------------------------------
-    # Install vcpkg and dependencies
-    # -------------------------------------------------------
     - name: Setup vcpkg
-      uses: microsoft/vcpkg-action@v1
+      uses: lukka/run-vcpkg@v11
       with:
-        revision: master
-        # Optional cache
-        cache: true
+        # Optionally specify triplet, e.g.:
+        # triplet: x64-linux
+        # You can also rely on default
+        # Optionally specify packages directly or rely on vcpkg.json
+        # pkgs: "nlohmann-json openssl"
+        # If you prefer manifest mode (recommended), leave out pkgs.
+        # pkgs: ""
+        # If using manifest, ensure vcpkg.json exists in project root
+        runVcpkgInstall: true
+        vcpkgArguments: "nlohmann-json openssl"
 
-    - name: Install dependencies via vcpkg
-      run: |
-        ./vcpkg/vcpkg install nlohmann-json openssl
-        ./vcpkg/vcpkg integrate install
-
-    # -------------------------------------------------------
-    # Configure CMake with vcpkg toolchain
-    # -------------------------------------------------------
     - name: Configure CMake
       run: |
         cmake -S . -B build \
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_BUILD_TYPE=Release
 
-    # -------------------------------------------------------
-    # Build
-    # -------------------------------------------------------
     - name: Build
       run: cmake --build build --config Release
-
