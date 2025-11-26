@@ -1,3 +1,4 @@
+#include <ctime>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
@@ -28,7 +29,7 @@ void from_json(const nlohmann::json& json_data, CommitInfo& commit)
     json_data.at("file_hashes").get_to(commit.file_hashes);  // works for unordered_map<string,string>
 }
 
-std::string timepointToString(const std::chrono::system_clock::time_point& tp) {
+std::string timepoint_to_string(const std::chrono::system_clock::time_point& tp) {
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
     std::tm tm = *std::gmtime(&t); 
     
@@ -37,12 +38,4 @@ std::string timepointToString(const std::chrono::system_clock::time_point& tp) {
     return oss.str();
 }
 
-std::chrono::system_clock::time_point stringToTimepoint(const std::string& s) {
-    std::tm tm = {};
-    std::istringstream iss(s);
-    iss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-
-    std::time_t t = _mkgmtime(&tm); 
-    return std::chrono::system_clock::from_time_t(t);
-}
 

@@ -151,7 +151,7 @@ void Repository::commit(const std::string& message)
             commit.author = "Author";
             log_entry.author = commit.author;
             auto now = std::chrono::system_clock::now();
-            commit.timestamp = timepointToString(now);
+            commit.timestamp = timepoint_to_string(now);
             log_entry.timestamp = commit.timestamp;
             commit.message = message;    
             log_entry.message = commit.message;    
@@ -271,7 +271,7 @@ void Repository::revert(const std::string& commit_id)
                 commit.author = "Author";
                 log_entry.author = commit.author;
                 auto now = std::chrono::system_clock::now();
-                commit.timestamp = timepointToString(now);
+                commit.timestamp = timepoint_to_string(now);
                 log_entry.timestamp = commit.timestamp;
                 commit.message = "Reverting to " + commit_id;    
                 log_entry.message = commit.message;    
@@ -506,7 +506,7 @@ void Repository::checkout(const std::string& branch)
                 // TODO: Read author name from config file               
                 log_entry.author = "Author";
                 auto now = std::chrono::system_clock::now();
-                log_entry.timestamp = timepointToString(now);
+                log_entry.timestamp = timepoint_to_string(now);
                 log_entry.message = "Switched to branch " + branch;    
                 log_entry.new_commit_id = commit_info.id;
                 log_entry.old_commit_id = old_commit_id;
@@ -671,7 +671,7 @@ void Repository::merge(const std::string& branch)
                     commit.author = "Author";
                     log_entry.author = commit.author;
                     auto now = std::chrono::system_clock::now();
-                    commit.timestamp = timepointToString(now);
+                    commit.timestamp = timepoint_to_string(now);
                     log_entry.timestamp = commit.timestamp;
                     commit.message = "Merged " + branch + " into " + get_current_branch();    
                     log_entry.message = commit.message;    
