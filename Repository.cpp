@@ -165,6 +165,25 @@ void Repository::commit(const std::string& message)
             commit.parent_1_id = parent_commit_info.id;
             log_entry.old_commit_id = parent_commit_info.id;
 
+            if(std::filesystem::exists(MINIGIT_MERGING_FLAG_PATH))
+            {
+                std::filesystem::remove(MINIGIT_MERGING_FLAG_PATH);
+                
+                std::ifstream merge_head(MINIGIT_MERGE_HEAD_PATH);
+                std::stringstream buffer;
+                buffer << merge_head.rdbuf();
+                std::string other_commit_id = buffer.str();
+                merge_head.close();
+
+                commit.parent_2_id = other_commit_id;
+                log_entry.merge = true;
+                log_entry.other_commit_id = other_commit_id;               
+            }
+            else
+            {
+                log_entry.merge = false;
+            }    
+            
             // Write commit ID in corresponding branch file
             std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
             branch_file << commit.id;
@@ -335,6 +354,12 @@ void Repository::print_log() const
         {
             auto const& entry = entries.back();
             std::cout <<"commit " << entry.new_commit_id << std::endl;
+
+            if(entry.merge)
+            {
+                std::cout << "Merge " + entry.old_commit_id + " " + entry.other_commit_id << std::endl;
+            }
+           
             std::cout <<"Author: " << entry.author << std::endl;
             std::cout <<"Date: " << entry.timestamp << std::endl;
             std::cout << std::endl;
@@ -657,6 +682,8 @@ void Repository::merge(const std::string& branch)
                     commit.parent_1_id = last_commit_branch_1;
                     commit.parent_2_id = last_commit_branch_2;
                     log_entry.old_commit_id = last_commit_branch_1;
+                    log_entry.merge = true;
+                    log_entry.other_commit_id = last_commit_branch_2;
 
                     // Write commit ID in corresponding branch file
                     std::ofstream branch_file(MINIGIT_BRANCHES_PATH + get_current_branch());
@@ -677,11 +704,17 @@ void Repository::merge(const std::string& branch)
                 {
                     // There is a conflict, so cannot merge automatically.
                     
-                    std::cout << "Automerge failed. Solve merge conflicts manually and run merge again." << std::endl;
-
-                }
-
-                
+                    std::cout << "Automerge failed. Fix conflicts and then commit the result." << std::endl;
+                    
+                    // Create a merge flag that will be removed when the merge is completed
+                    std::ofstream merge_flag(MINIGIT_MERGING_FLAG_PATH);
+                    merge_flag.close();
+                    
+                    // Store the head commit id of the other branch
+                    std::ofstream merge_head(MINIGIT_MERGE_HEAD_PATH);
+                    merge_head << last_commit_branch_2;
+                    merge_head.close(); 
+                }             
             }
         }
     } 
@@ -700,6 +733,12 @@ void Repository::status()
     else
     {
         std::cout<< "On branch " << get_current_branch() << std::endl;
+
+        if(std::filesystem::exists(MINIGIT_MERGING_FLAG_PATH))
+        {
+            std::cout << "You have unmerged paths. Fix conflicts, stage to mark resolutions then commit." << std::endl;
+        }
+
 
         std::vector<std::string> staged;
         std::vector<std::string> modified;
@@ -738,9 +777,7 @@ void Repository::status()
         {
             std::cout << "Nothing to commit, working tree clean." << std::endl;
         }
-
     }
-       
 }
 
 bool Repository::initialized() const

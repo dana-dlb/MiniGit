@@ -13,6 +13,8 @@ typedef struct LogEntry
     std::string author; 
     std::string timestamp;
     std::string message;
+    bool merge;
+    std::string other_commit_id; // HEAD commit id of the branch being merged into current branch
 } LogEntry;
 
 

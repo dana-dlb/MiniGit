@@ -131,7 +131,7 @@ int main(int argc, char* argv[])
     else 
     {
         std::cout << "Unknown command: " << command << "\n";
-        std::cout << "Available commands: init, add, commit, status, log, revert, branch, checkout\n";
+        std::cout << "Available commands: init, add, commit, status, log, revert, branch, checkout, merge\n";
         return 1;
     }
 

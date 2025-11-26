@@ -2,6 +2,8 @@
 
 const std::string MINIGIT_FILES_PATH = ".minigit\\";
 const std::string MINIGIT_HEAD_PATH = MINIGIT_FILES_PATH + "HEAD";
+const std::string MINIGIT_MERGING_FLAG_PATH = MINIGIT_FILES_PATH + "MERGING";
+const std::string MINIGIT_MERGE_HEAD_PATH = MINIGIT_FILES_PATH + "MERGE_HEAD";
 const std::string MINIGIT_INDEX_PATH = MINIGIT_FILES_PATH + "index.json";
 const std::string MINIGIT_REFS_PATH = MINIGIT_FILES_PATH + "refs\\";
 const std::string MINIGIT_BRANCHES_PATH = MINIGIT_FILES_PATH + "refs\\heads\\";
