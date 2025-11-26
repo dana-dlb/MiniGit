@@ -1,4 +1,4 @@
-name: CMake CI
+name: MiniGit CMake CI
 
 on:
   push:
@@ -11,22 +11,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    # 1. Checkout repo
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
+    # 2. Setup vcpkg (automatic fetch, no submodule)
     - name: Setup vcpkg
       uses: friendlyanon/setup-vcpkg@v1
       with:
-        committish: "2025-10-01"  # or a specific commit/tag from vcpkg repo
+        committish: "2025-10-01"  # stable vcpkg commit
         cache: true
 
+    # 3. Install dependencies from vcpkg.json
     - name: Install dependencies
       run: $VCPKG_ROOT/vcpkg install
 
+    # 4. Configure CMake
     - name: Configure CMake
       run: |
         cmake -S . -B build \
           -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_BUILD_TYPE=Release
 
+    # 5. Build
     - name: Build
       run: cmake --build build --config Release
+
+    # 6. Optional: Run tests if you add CTest
+    - name: Run tests
+      if: exists('build/CTestTestfile.cmake')
+      working-directory: build
+      run: ctest --output-on-failure
