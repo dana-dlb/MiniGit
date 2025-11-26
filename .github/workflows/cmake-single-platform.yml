@@ -36,3 +36,19 @@ jobs:
     # 5. Build
     - name: Build
       run: cmake --build build --config Release
+
+    # 6. Setup Python
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    # 7. Install Python dependencies (if any)
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    # 8. Run Python autotester
+    - name: Run Python autotester
+      run: python tests/MiniGit_autotester/MiniGit_autotester.py
