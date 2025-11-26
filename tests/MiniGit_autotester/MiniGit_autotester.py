@@ -35,6 +35,12 @@ class Initialization(unittest.TestCase):
         remove_repository()
 
     def test_init_creates_repository(self):
+        # TODO: remove this after fixing GitHub Actions run
+        current_dir = os.getcwd()
+        print("Current Directory" + current_dir)
+        files = [f for f in os.listdir(current_dir)]
+        print(files)
+
         minigit_run("init")
         self.assertTrue(os.path.exists(".minigit"))
 
