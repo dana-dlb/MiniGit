@@ -14,25 +14,26 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # -----------------------------------------
+    # Setup vcpkg + install deps from vcpkg.json
+    # -----------------------------------------
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11
       with:
-        # Optionally specify triplet, e.g.:
-        # triplet: x64-linux
-        # You can also rely on default
-        # Optionally specify packages directly or rely on vcpkg.json
-        # pkgs: "nlohmann-json openssl"
-        # If you prefer manifest mode (recommended), leave out pkgs.
-        # pkgs: ""
-        # If using manifest, ensure vcpkg.json exists in project root
-        runVcpkgInstall: true
-        vcpkgArguments: "nlohmann-json openssl"
+        runVcpkgInstall: true   # automatically runs "vcpkg install"
+        vcpkgJsonGlob: "**/vcpkg.json"
 
+    # -----------------------------------------
+    # Configure CMake using the vcpkg toolchain
+    # -----------------------------------------
     - name: Configure CMake
       run: |
         cmake -S . -B build \
           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_BUILD_TYPE=Release
 
+    # -----------------------------------------
+    # Build
+    # -----------------------------------------
     - name: Build
       run: cmake --build build --config Release
