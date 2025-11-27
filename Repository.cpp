@@ -921,6 +921,7 @@ void Repository::get_working_directory_files_statuses(
 {
     std::vector<std::string> working_directory_files;
     load_working_directory_files(working_directory_files);
+    std::sort(working_directory_files.begin(), working_directory_files.end());
 
     std::unordered_map<std::string, std::string> tracked_files;
     load_tracked_files(tracked_files);
