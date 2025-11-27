@@ -37,8 +37,6 @@ class Initialization(unittest.TestCase):
     def test_init_creates_repository(self):
         minigit_run("init")
         self.assertTrue(os.path.exists(".minigit"))
-        files = [f for f in os.listdir(".minigit")]
-        print(files)
         self.assertTrue(os.path.exists(".minigit/HEAD"))
         with open(".minigit/HEAD", "r") as file:
             self.assertEqual(file.read(), "master")

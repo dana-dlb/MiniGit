@@ -536,13 +536,22 @@ void Repository::print_branches()
     }
     else
     {
-      for(auto const& dir_entry : std::filesystem::directory_iterator {MINIGIT_BRANCHES_PATH})
+        std::vector<std::string> branches;
+
+        for(auto const& dir_entry : std::filesystem::directory_iterator {MINIGIT_BRANCHES_PATH})
         {
             if(dir_entry.is_regular_file())
             {
-                std::cout << dir_entry.path().filename().string() << std::endl;
+                branches.push_back(dir_entry.path().filename().string());
             }     
         } 
+
+        // Sort in order to have consistent output on Linux/Windows 
+        std::sort(branches.begin(), branches.end());
+        for(auto branch : branches)
+        {
+            std::cout << branch << std::endl;
+        }
     } 
 }
 
