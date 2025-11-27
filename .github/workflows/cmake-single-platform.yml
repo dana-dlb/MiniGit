@@ -55,4 +55,4 @@ jobs:
         cd tests/MiniGit_autotester
         mkdir test_directory
         cd test_directory 
-        python ../MiniGit_autotester.py -vvv
+        python ../MiniGit_autotester.py Status -vvv
