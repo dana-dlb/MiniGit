@@ -796,7 +796,7 @@ bool Repository::initialized() const
 void Repository::load_working_directory_files(std::vector<std::string>& working_directory_files) const
 // Load working directory files into working_directory_files.
 {
-    for(auto const& dir_entry : std::filesystem::directory_iterator {".\\"})
+    for(auto const& dir_entry : std::filesystem::directory_iterator {"."})
     {
         if(dir_entry.is_regular_file())
         {
